@@ -1,6 +1,6 @@
 # Acium Sensor — Datto RMM Deployment Script
 
-This repo contains `Deploy-Agent.ps1`, a PowerShell script that installs and keeps the Acium Sensor up to date across a fleet of Windows endpoints via Datto RMM.
+This folder contains `dattormm-acium.ps1`, a PowerShell script that installs and keeps the Acium Sensor up to date across a fleet of Windows endpoints via Datto RMM.
 
 It's designed to run as a **recurring Datto RMM Component**, safely skipping machines that are already up to date and only reinstalling when something's actually changed.
 
@@ -31,7 +31,7 @@ In Datto RMM, go to **Automation > Components > New Component**, and choose a **
 
 ### 2. Paste in the script
 
-Copy the contents of `Deploy-Agent.ps1` into the Component's script body.
+Copy the contents of `dattormm-acium.ps1` into the Component's script body.
 
 ### 3. Add the Component Variable
 
