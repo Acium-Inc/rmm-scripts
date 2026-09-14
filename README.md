@@ -16,3 +16,7 @@ Each subfolder targets a specific RMM platform (or a platform-agnostic use case)
 1. Create a subfolder named for the target platform (e.g. `ninjaone/`, `n-able/`).
 2. Add the script(s) plus a `readme.md` documenting what it does, its prerequisites, required variables/inputs, and exit codes.
 3. Link the new folder from the table above.
+
+## License
+
+MIT — see [`LICENSE`](LICENSE).
