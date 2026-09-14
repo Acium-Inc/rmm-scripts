@@ -74,7 +74,7 @@ $ErrorActionPreference = 'Stop'
 # (rather than read from an RMM variable) so the script is self-contained
 # and behaves identically no matter what platform runs it. Update this URL
 # and redeploy the script when a new agent version needs to go out.
-$DownloadUrl = 'https://storage.googleapis.com/ebm-sensors-prod/win/acium-sensor-setup.zip'
+$DownloadUrl = 'https://storage.googleapis.com/ebm-sensors-prod/win/acium-sensor-setup-0.16.8.zip'
 
 # The organization/tenant ID this sensor should report under. Passed to the
 # MSI as the ORGANIZATION property (the installer's own log shows it accepts

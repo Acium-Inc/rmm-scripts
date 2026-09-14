@@ -22,7 +22,7 @@
     agent version later is just editing a variable, not editing code):
 
         AgentDownloadUrl   - Direct URL to the pinned agent zip, e.g.
-                              https://storage.googleapis.com/ebm-sensors-prod/win/acium-sensor-setup.zip
+                              https://storage.googleapis.com/ebm-sensors-prod/win/acium-sensor-setup-0.16.8.zip
 
     RECURRING-RUN NOTE: Since this Component runs on a schedule (not just
     once), the script needs a reliable way to know "did anything actually
