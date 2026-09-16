@@ -39,7 +39,7 @@ Because these scripts duplicate their install logic, **a fix or behavioral chang
 Both scripts follow the same section layout — useful for finding where to make a change:
 
 1. **CONFIG** — `$ScriptVersion`, config values (hardcoded or from `$env:`), file paths, `$ProductCode`/`$DisplayNamePattern` for install-state detection.
-2. **SETUP** — creates/locks down working directories (custom ACLs, since `C:\ProgramData`'s default DACL lets standard users create subfolders), rotates the log, defines `Write-Log`, takes a machine-wide mutex so overlapping scheduled runs don't race.
+2. **SETUP** — creates/locks down working directories (custom ACLs, since `C:\ProgramData`'s default DACL lets standard users create subfolders — if hardening a directory fails, the script fails closed with exit `2` rather than proceeding against a directory that may still be junction/write-attackable), rotates the log, defines `Write-Log`, takes a machine-wide mutex so overlapping scheduled runs don't race.
 3. **SHARED HELPERS** — `Set-SecurityProtocol` (TLS), `Invoke-Download` (WebClient-based, retries, honors system proxy), `Get-SensorInstallState` (service presence, not process), `Find-InstalledProduct` (registry cross-check by `$DisplayNamePattern`).
 4. **CHANGE CHECK** — decides whether to skip this run: compares the server's ETag against the last successful run's saved ETag, AND confirms the sensor is actually still installed. Both must agree to skip.
 5. **DOWNLOAD** — downloads the `.zip`, then does a second, server-independent change check via SHA256 of the downloaded bytes (catches a server that stops sending ETag headers).
@@ -61,6 +61,7 @@ Both scripts follow the same section layout — useful for finding where to make
 |---|---|
 | `0` | Success — installed, already up to date (no-op), or deferred pending a reboot |
 | `1` | Download failed |
+| `2` | Could not secure the working/log directory (ACL hardening failed) — refused to proceed with a privileged install |
 | `3` | Install failed |
 | `4` | Missing/invalid required config (`$DownloadUrl` empty, or `AgentDownloadUrl` Component Variable missing) |
 | `5` | Zip extraction failed / MSI not found inside package |

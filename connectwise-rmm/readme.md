@@ -86,6 +86,7 @@ If a deployment isn't behaving as expected, `deploy.log` is the first place to l
 |---|---|
 | `0` | Success — installed, already up to date (no-op), or deferred pending a reboot (see the log for which) |
 | `1` | Download failed (sensor package or ASP.NET Core Runtime installer) |
+| `2` | Could not secure the working/log directory (ACL hardening failed) — refused to proceed with a privileged install |
 | `3` | Install failed (sensor MSI or ASP.NET Core Runtime installer) |
 | `4` | Missing or invalid configuration value (`$DownloadUrl` empty, or `$Organization` contains a double quote) |
 | `5` | Zip extraction failed / `AciumSensorInstall.msi` not found inside the package |
@@ -100,6 +101,7 @@ How ConnectWise RMM's own console surfaces this process exit code is unverified 
 
 ## Troubleshooting
 
+- **Script exits with code 2**: The script couldn't lock down `$LogDir` or `$WorkDir`'s permissions (`Set-Acl`/`Get-Acl` failed), so it refused to proceed rather than stage/execute a privileged MSI in a directory that might still be writable by non-admins. This should be very rare when running as SYSTEM — check `deploy.log` for the exact directory and investigate why an ACL change failed there (endpoint security software, filesystem issue, or an already-tampered-with directory are the likely causes).
 - **UAC prompt appears on the client**: This shouldn't happen if the script is genuinely running as SYSTEM — SYSTEM-context execution never triggers UAC. If you see this, check `deploy.log`'s `Running as:` line to see what account actually ran the script, and confirm your script/task type isn't configured for logged-on-user context.
 - **Install seems to succeed but the sensor doesn't run**: Check whether the ASP.NET Core 8.0 Runtime installed successfully in `deploy.log`, and confirm via `Get-Service AciumSensor` on the endpoint. If the runtime is present and the service still isn't there, check `msi-install.log` for the `Feature: Main; ... Action:` line — if it says `Action: Null` for every component (instead of `Action: Local`), Windows Installer silently did nothing (see the exit-code-3/1638 entry below for why).
 - **Script always reinstalls, never skips**: Check that the download URL returns an `ETag` header (most servers, including Google Cloud Storage, do this by default) and that `last-installed.json` is being written and persisted between runs.

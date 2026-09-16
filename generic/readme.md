@@ -62,6 +62,7 @@ If a deployment isn't behaving as expected, `deploy.log` is the first place to l
 |---|---|
 | `0` | Success — installed, already up to date (no-op), or deferred pending a reboot (see the log for which) |
 | `1` | Download failed (sensor package or ASP.NET Core Runtime installer) |
+| `2` | Could not secure the working/log directory (ACL hardening failed) — refused to proceed with a privileged install |
 | `3` | Install failed (sensor MSI or ASP.NET Core Runtime installer) |
 | `4` | Missing or invalid configuration value (`$DownloadUrl` left empty, or `$Organization` contains a double quote) |
 | `5` | Zip extracted successfully, but `AciumSensorInstall.msi` wasn't found inside it |
@@ -76,6 +77,7 @@ Whatever runs this script can read these to tell whether a failure was a network
 
 ## Troubleshooting
 
+- **Script exits with code 2**: The script couldn't lock down `$LogDir` or `$WorkDir`'s permissions (`Set-Acl`/`Get-Acl` failed), so it refused to proceed rather than stage/execute a privileged MSI in a directory that might still be writable by non-admins. This should be very rare when running as SYSTEM — check `deploy.log` for the exact directory and investigate why an ACL change failed there (endpoint security software, filesystem issue, or an already-tampered-with directory are the likely causes).
 - **Script exits with code 4**: `$DownloadUrl` in SECTION 1 is empty — this shouldn't happen unless the script was edited and the value was accidentally cleared. Set it to the sensor package URL. (`$Organization` being empty is fine — it's optional; a double quote inside it is not.)
 - **Install seems to succeed but the sensor doesn't run**: Check whether the ASP.NET Core 8.0 Runtime installed successfully in `deploy.log`, and confirm via `Get-Service AciumSensor` on the endpoint. If the runtime is present and the service still isn't there, check `msi-install.log` for the `Feature: Main; ... Action:` line — if it says `Action: Null` for every component (instead of `Action: Local`), Windows Installer silently did nothing (see the exit-code-3/1638 entry below for why, and confirm you're running a version of this script with the ProductState check — older copies always passed `REINSTALL=ALL` and could hit exactly this).
 - **Script always reinstalls, never skips**: Check that the download URL returns an `ETag` header (most servers, including Google Cloud Storage, do this by default) and that `last-installed.json` is being written and persisted between runs.

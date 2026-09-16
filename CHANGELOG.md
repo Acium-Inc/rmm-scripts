@@ -4,11 +4,19 @@ All notable changes to the scripts in this repo are documented here, grouped by 
 
 ## ninjaone/
 
+### 1.0.1 — 2026-09-16
+
+**Security fix:** if hardening the ACL on `$LogDir`/`$WorkDir` (SECTION 2) failed, the script previously logged a warning and continued anyway — proceeding to stage and execute a privileged MSI, and recursively delete, inside a directory that may still have been writable by non-admins (the ProgramData-inherited-DACL/junction attack the hardening step exists to close off). It now fails closed: an ACL-hardening failure logs an error and exits with a new code `2` instead of proceeding. Flagged by a GitHub Copilot PR review comment; see `CLAUDE.md`'s exit-code table and this folder's readme for the new code.
+
 ### 1.0.0 — 2026-09-16
 
 Initial version of `ninjaone-acium.ps1`, adapted from `generic-acium.ps1`/`dattormm-acium.ps1` (both at 1.1.0) for NinjaOne. Reads its configuration (`AgentDownloadUrl`, `AgentOrganization`, `ExpectedPublisherCN`) from NinjaOne Automation Script Variables, injected into the script's environment for the run — the same shape as Datto RMM's Component Variables. Install/change-check/prerequisite/logging logic is otherwise identical to the other platform scripts.
 
 ## connectwise-rmm/
+
+### 1.0.1 — 2026-09-16
+
+**Security fix:** same ACL-hardening fail-closed fix as `ninjaone/` 1.0.1 above — if `Protect-Directory` (SECTION 2) failed on `$LogDir`/`$WorkDir`, the script now exits `2` instead of warning and continuing with a privileged install against a directory that may still be writable by non-admins. Flagged by a GitHub Copilot PR review comment on this file specifically.
 
 ### 1.0.0 — 2026-09-16
 
@@ -16,11 +24,19 @@ Initial version of `connectwise-rmm-acium.ps1`, adapted from `generic-acium.ps1`
 
 ## syncro/
 
+### 1.0.1 — 2026-09-16
+
+**Security fix:** same ACL-hardening fail-closed fix as `ninjaone/` 1.0.1 above — if `Protect-Directory` (SECTION 2) failed on `$LogDir`/`$WorkDir`, the script now exits `2` instead of warning and continuing with a privileged install against a directory that may still be writable by non-admins.
+
 ### 1.0.0 — 2026-09-16
 
 Initial version of `syncro-acium.ps1`, adapted from `generic-acium.ps1`/`dattormm-acium.ps1` (both at 1.1.0) for Syncro. Reads its configuration (`AgentDownloadUrl`, `AgentOrganization`, `ExpectedPublisherCN`) from Syncro Script Variables — confirmed via Syncro's own documentation to be injected as bare top-level PowerShell variables (e.g. `$AgentDownloadUrl`), not `$env:`-prefixed environment variables like Datto RMM/NinjaOne use; `Agent`-prefixed variable names avoid colliding with this script's own internal `$DownloadUrl`/`$Organization` variables. Install/change-check/prerequisite/logging logic is otherwise identical to the other platform scripts.
 
 ## n-able/
+
+### 1.0.1 — 2026-09-16
+
+**Security fix:** same ACL-hardening fail-closed fix as `ninjaone/` 1.0.1 above — if `Protect-Directory` (SECTION 2) failed on `$LogDir`/`$WorkDir`, the script now exits `2` instead of warning and continuing with a privileged install against a directory that may still be writable by non-admins.
 
 ### 1.0.0 — 2026-09-16
 
@@ -28,11 +44,19 @@ Initial version of `n-able-acium.ps1`, adapted from `generic-acium.ps1`/`dattorm
 
 ## intune/
 
+### 1.0.1 — 2026-09-16 (intune-acium-remediation.ps1 only)
+
+**Security fix:** same ACL-hardening fail-closed fix as `ninjaone/` 1.0.1 above — if `Protect-Directory` (SECTION 2) failed on `$LogDir`/`$WorkDir`, `intune-acium-remediation.ps1` now exits `2` instead of warning and continuing with a privileged install against a directory that may still be writable by non-admins. `intune-acium-detection.ps1` is unaffected — it never calls `Protect-Directory`.
+
 ### 1.0.0 — 2026-09-16
 
 Initial version, split into `intune-acium-detection.ps1` (read-only) and `intune-acium-remediation.ps1` (does the install), deployed as an Intune Remediation rather than a single script — Intune's plain "platform script" mechanism runs once per device and never recurs, which doesn't fit this repo's recurring/idempotent design, and Remediations have no per-deployment variable system, so configuration is hardcoded in both scripts (same pattern as `generic-acium.ps1`) between `EDIT THESE VALUES` markers. `$DownloadUrl` must be kept identical across both files — see the `.NOTES` in `intune-acium-remediation.ps1`. `intune-acium-remediation.ps1`'s install logic is otherwise adapted directly from `generic-acium.ps1` 1.1.0.
 
 ## generic/
+
+### 1.2.0 — 2026-09-16
+
+**Security fix:** if hardening the ACL on `$LogDir`/`$WorkDir` (SECTION 2) failed, the script previously logged a warning and continued anyway — proceeding to stage and execute a privileged MSI, and recursively delete, inside a directory that may still have been writable by non-admins (the ProgramData-inherited-DACL/junction attack the hardening step exists to close off). It now fails closed: an ACL-hardening failure logs an error and exits with a new code `2` instead of proceeding. Flagged by a GitHub Copilot PR review comment (on `connectwise-rmm-acium.ps1`, which shares this same SECTION 2 logic); applied to every near-duplicate script in this repo. See the updated exit-code table in `CLAUDE.md` and this folder's readme.
 
 ### 1.1.0 — 2026-09-14
 
@@ -52,6 +76,10 @@ Promoted from `generic-acium-beta.ps1` to production as `generic-acium.ps1` afte
 - **Added `$ScriptVersion`** tracking (this changelog).
 
 ## dattormm/
+
+### 1.2.0 — 2026-09-16
+
+**Security fix:** if hardening the ACL on `$LogDir`/`$WorkDir` (SECTION 2) failed, the script previously logged a warning and continued anyway — proceeding to stage and execute a privileged MSI, and recursively delete, inside a directory that may still have been writable by non-admins (the ProgramData-inherited-DACL/junction attack the hardening step exists to close off). It now fails closed: an ACL-hardening failure logs an error and exits with a new code `2` instead of proceeding. Flagged by a GitHub Copilot PR review comment (on `connectwise-rmm-acium.ps1`, which shares this same SECTION 2 logic); applied to every near-duplicate script in this repo. See the updated exit-code table in `CLAUDE.md` and this folder's readme.
 
 ### readme.md — 2026-09-16 (docs only, no script change)
 

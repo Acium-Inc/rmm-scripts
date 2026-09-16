@@ -87,6 +87,7 @@ If a deployment isn't behaving as expected, `deploy.log` is the first place to l
 |---|---|
 | `0` | Success — installed, already up to date (no-op), or deferred pending a reboot (see the log for which) |
 | `1` | Download failed (sensor package or ASP.NET Core Runtime installer) |
+| `2` | Could not secure the working/log directory (ACL hardening failed) — refused to proceed with a privileged install |
 | `3` | Install failed (sensor MSI or ASP.NET Core Runtime installer) |
 | `4` | Missing or invalid Input Parameter (`AgentDownloadUrl` empty, or `AgentOrganization` contains a double quote) |
 | `5` | Zip extraction failed / `AciumSensorInstall.msi` not found inside the package |
@@ -102,6 +103,7 @@ Automation Manager only distinguishes success (exit `0`) from failure (any non-z
 ## Troubleshooting
 
 - **Input Parameter values don't seem to reach the script (`deploy.log` shows "Download URL: (blank)" or similar)**: This is the unverified part of the setup — see the warning above. Confirm your N-central version actually binds Input Parameters to same-named PowerShell `param()` variables; if not, switch SECTION 1 to read `$env:AgentDownloadUrl` etc. instead.
+- **Script exits with code 2**: The script couldn't lock down `$LogDir` or `$WorkDir`'s permissions (`Set-Acl`/`Get-Acl` failed), so it refused to proceed rather than stage/execute a privileged MSI in a directory that might still be writable by non-admins. This should be very rare when running as SYSTEM — check `deploy.log` for the exact directory and investigate why an ACL change failed there (endpoint security software, filesystem issue, or an already-tampered-with directory are the likely causes).
 - **UAC prompt appears on the client**: This shouldn't happen if the Object is genuinely running under the agent's service account — SYSTEM-context execution never triggers UAC. If you see this, first confirm the Object isn't set to "Run as Current Logged on User," then check `deploy.log`'s `Running as:` line to see what account actually ran the script.
 - **Install seems to succeed but the sensor doesn't run**: Check whether the ASP.NET Core 8.0 Runtime installed successfully in `deploy.log`, and confirm via `Get-Service AciumSensor` on the endpoint. If the runtime is present and the service still isn't there, check `msi-install.log` for the `Feature: Main; ... Action:` line — if it says `Action: Null` for every component (instead of `Action: Local`), Windows Installer silently did nothing (see the exit-code-3/1638 entry below for why).
 - **Script always reinstalls, never skips**: Check that the download URL returns an `ETag` header (most servers, including Google Cloud Storage, do this by default) and that `last-installed.json` is being written and persisted between runs.

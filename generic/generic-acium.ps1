@@ -63,6 +63,8 @@
         0   - Success (installed, already up to date, or deferred pending
               a reboot — see the log for which)
         1   - Download failed
+        2   - Could not secure the working/log directory (ACL hardening
+              failed) — refused to proceed with a privileged install
         3   - Install failed
         4   - Missing or invalid configuration value in the script
         5   - Zip extraction failed / MSI not found inside package
@@ -84,7 +86,7 @@ $ErrorActionPreference = 'Stop'
 # This script's own revision (not the agent's — see $DownloadUrl below for
 # that). Bump this whenever the script's logic changes, and record the
 # change in CHANGELOG.md at the repo root.
-$ScriptVersion = '1.1.0'
+$ScriptVersion = '1.2.0'
 
 # --- EDIT THESE VALUES TO CONFIGURE A DEPLOYMENT ---
 
@@ -264,7 +266,13 @@ Write-Log "=== Deployment started (script version $ScriptVersion) ==="
 
 foreach ($dir in $aclResults.Keys) {
     if (-not $aclResults[$dir]) {
-        Write-Log "Could not harden ACL on $dir - continuing, but this directory may be writable by non-admins." 'WARN'
+        # Fail closed. This directory inherits ProgramData's default DACL,
+        # which lets standard users create/plant a junction in it — the
+        # exact scenario Protect-Directory exists to close off. Proceeding
+        # to stage and execute a privileged MSI (or recursively delete)
+        # here anyway would leave that attack live.
+        Write-Log "ERROR: Could not harden ACL on $dir - refusing to proceed with a privileged install against a directory that may still be writable by non-admins." 'ERROR'
+        exit 2
     }
 }
 

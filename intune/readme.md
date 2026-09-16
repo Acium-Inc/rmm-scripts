@@ -100,6 +100,7 @@ Intune's Remediations framework only interprets **0 (compliant/success) vs. non-
 |---|---|
 | `0` | Success — installed, already up to date (no-op), or deferred pending a reboot (see the log for which) |
 | `1` | Download failed (sensor package or ASP.NET Core Runtime installer) |
+| `2` | Could not secure the working/log directory (ACL hardening failed) — refused to proceed with a privileged install |
 | `3` | Install failed (sensor MSI or ASP.NET Core Runtime installer) |
 | `4` | Missing or invalid configuration value in the script |
 | `5` | Zip extraction failed / `AciumSensorInstall.msi` not found inside the package |
@@ -112,6 +113,7 @@ Intune's Remediations framework only interprets **0 (compliant/success) vs. non-
 
 ## Troubleshooting
 
+- **Remediation script exits with code 2**: It couldn't lock down `$LogDir` or `$WorkDir`'s permissions (`Set-Acl`/`Get-Acl` failed), so it refused to proceed rather than stage/execute a privileged MSI in a directory that might still be writable by non-admins. This should be very rare when running as SYSTEM — check `deploy.log` for the exact directory and investigate why an ACL change failed there (endpoint security software, filesystem issue, or an already-tampered-with directory are the likely causes).
 - **Remediation never runs even though the sensor isn't installed**: Confirm the Remediation is actually assigned to the device's group and check the device's Remediation status under Devices > Scripts and remediations — a device that hasn't checked in recently won't have run detection yet.
 - **Detection keeps reporting non-compliant on every cycle even right after a successful remediation**: Check that `intune-acium-detection.ps1`'s hardcoded `$DownloadUrl` exactly matches `intune-acium-remediation.ps1`'s — a mismatch means detection is comparing against a different (or non-existent) resource and will never see the ETag it's looking for.
 - **Install seems to succeed but the sensor doesn't run**: Check whether the ASP.NET Core 8.0 Runtime installed successfully in `deploy.log`, and confirm via `Get-Service AciumSensor` on the endpoint. If the runtime is present and the service still isn't there, check `msi-install.log` for the `Feature: Main; ... Action:` line — if it says `Action: Null` for every component (instead of `Action: Local`), Windows Installer silently did nothing (see the exit-code-3/1638 entry below for why).
