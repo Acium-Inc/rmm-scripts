@@ -2,6 +2,36 @@
 
 All notable changes to the scripts in this repo are documented here, grouped by folder. Each script tracks its own version in a `$ScriptVersion` variable in SECTION 1 (CONFIG) of the file — bump it whenever the script's logic changes, and add an entry below.
 
+## ninjaone/
+
+### 1.0.0 — 2026-09-16
+
+Initial version of `ninjaone-acium.ps1`, adapted from `generic-acium.ps1`/`dattormm-acium.ps1` (both at 1.1.0) for NinjaOne. Reads its configuration (`AgentDownloadUrl`, `AgentOrganization`, `ExpectedPublisherCN`) from NinjaOne Automation Script Variables, injected into the script's environment for the run — the same shape as Datto RMM's Component Variables. Install/change-check/prerequisite/logging logic is otherwise identical to the other platform scripts.
+
+## connectwise-rmm/
+
+### 1.0.0 — 2026-09-16
+
+Initial version of `connectwise-rmm-acium.ps1`, adapted from `generic-acium.ps1`/`dattormm-acium.ps1` (both at 1.1.0) for ConnectWise RMM (the Asio-based SaaS product, not ConnectWise Automate/LabTech, which uses a different scripting engine). ConnectWise RMM's exact mechanism for injecting a named script variable into a PowerShell script's environment could not be confirmed from public documentation at the time of writing, so configuration is **hardcoded** in SECTION 1 (same pattern as `generic-acium.ps1`) — see the `UNVERIFIED` note in the script's `.NOTES` header and the readme's opening section for what was and wasn't confirmed, and how to switch to variable-based config if you confirm the mechanism in your own tenant. Install/change-check/prerequisite/logging logic is otherwise identical to the other platform scripts.
+
+## syncro/
+
+### 1.0.0 — 2026-09-16
+
+Initial version of `syncro-acium.ps1`, adapted from `generic-acium.ps1`/`dattormm-acium.ps1` (both at 1.1.0) for Syncro. Reads its configuration (`AgentDownloadUrl`, `AgentOrganization`, `ExpectedPublisherCN`) from Syncro Script Variables — confirmed via Syncro's own documentation to be injected as bare top-level PowerShell variables (e.g. `$AgentDownloadUrl`), not `$env:`-prefixed environment variables like Datto RMM/NinjaOne use; `Agent`-prefixed variable names avoid colliding with this script's own internal `$DownloadUrl`/`$Organization` variables. Install/change-check/prerequisite/logging logic is otherwise identical to the other platform scripts.
+
+## n-able/
+
+### 1.0.0 — 2026-09-16
+
+Initial version of `n-able-acium.ps1`, adapted from `generic-acium.ps1`/`dattormm-acium.ps1` (both at 1.1.0), targeting **N-central** (Automation Manager's "Run PowerShell Script" Object) rather than N-sight RMM — N-central has documented Input/Output Parameters built specifically for PowerShell, while N-sight RMM's custom-script docs only show argument passing for batch/bash/VBScript. N-central's exact parameter-injection mechanism and default execution context could not be confirmed from public documentation, so the script reads its configuration via a standard `param()` block (the safest documented option) and flags both points as `UNVERIFIED` in the script's `.NOTES` header and the readme, with a test procedure to confirm SYSTEM context and parameter delivery before trusting it in production. Install/change-check/prerequisite/logging logic is otherwise identical to the other platform scripts.
+
+## intune/
+
+### 1.0.0 — 2026-09-16
+
+Initial version, split into `intune-acium-detection.ps1` (read-only) and `intune-acium-remediation.ps1` (does the install), deployed as an Intune Remediation rather than a single script — Intune's plain "platform script" mechanism runs once per device and never recurs, which doesn't fit this repo's recurring/idempotent design, and Remediations have no per-deployment variable system, so configuration is hardcoded in both scripts (same pattern as `generic-acium.ps1`) between `EDIT THESE VALUES` markers. `$DownloadUrl` must be kept identical across both files — see the `.NOTES` in `intune-acium-remediation.ps1`. `intune-acium-remediation.ps1`'s install logic is otherwise adapted directly from `generic-acium.ps1` 1.1.0.
+
 ## generic/
 
 ### 1.1.0 — 2026-09-14
@@ -22,6 +52,10 @@ Promoted from `generic-acium-beta.ps1` to production as `generic-acium.ps1` afte
 - **Added `$ScriptVersion`** tracking (this changelog).
 
 ## dattormm/
+
+### readme.md — 2026-09-16 (docs only, no script change)
+
+Rewrote the "Setup in Datto RMM" section with the actual current console flow, confirmed against a live tenant, and added screenshots for each step (`dattormm/images/`): Component Library's "Create Component" button (the button is labeled "Create Component", not "New Component"), the Create Component form fields (Name/Description/Category/Script type), setting Sites and adding Variables, the filled-in Component Variables, and the full Job-creation flow (Automation > Jobs > Create Job > Add Component > confirm variable values and Targets > Execution: Run as system account > Create Job). Removed the old standalone "Set execution context" step — execution context (System vs. logged-in user) is actually set per-Job during Job creation, not on the Component itself; there's no such setting on the Component form.
 
 ### 1.1.0 — 2026-09-14
 

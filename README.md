@@ -10,6 +10,11 @@ Each subfolder targets a specific RMM platform (or a platform-agnostic use case)
 |---|---|---|
 | [`dattormm/`](dattormm/) | Datto RMM | Deployment script for the Acium Sensor agent |
 | [`generic/`](generic/) | Any RMM / scheduled task / manual | Deployment script for the Acium Sensor agent, with configuration hardcoded directly in the script instead of an RMM's variable system |
+| [`ninjaone/`](ninjaone/) | NinjaOne | Deployment script for the Acium Sensor agent |
+| [`connectwise-rmm/`](connectwise-rmm/) | ConnectWise RMM | Deployment script for the Acium Sensor agent |
+| [`intune/`](intune/) | Microsoft Intune | Detection + remediation script pair for the Acium Sensor agent, deployed via Intune Remediations |
+| [`syncro/`](syncro/) | Syncro | Deployment script for the Acium Sensor agent |
+| [`n-able/`](n-able/) | N-able | Deployment script for the Acium Sensor agent |
 
 ## Adding a new script
 
