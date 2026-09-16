@@ -30,17 +30,17 @@ The script is intended to be idempotent and safe to run on a schedule — a mach
 
 In Datto RMM, go to **Automation > Component Library**, and click **Create Component** in the top right.
 
-![Component Library, with the Create Component button highlighted](images/03-component-library-create-button.png)
+![Component Library, with the Create Component button highlighted](images/01-component-library-create-button.png)
 
 ### 2. Fill in the Component details
 
 Give it a **Name** and, optionally, a **Description**. Set **Category** to **Scripts**, and change the **Script** dropdown to **PowerShell**. Paste the contents of `dattormm-acium.ps1` into the script body below.
 
-![Create Component form: Name, Description, Category = Scripts, Script = PowerShell](images/01-create-component-details.png)
+![Create Component form: Name, Description, Category = Scripts, Script = PowerShell](images/02-component-name-category-script.png)
 
 Scrolling down, set **Sites** to **All Sites** (unless you specifically want this Component scoped to only certain sites), then click **Add variable**.
 
-![Sites set to All Sites, with the Add variable button highlighted](images/02-sites-and-add-variable.png)
+![Sites set to All Sites, with the Add variable button highlighted](images/02b-sites-and-add-variable.png)
 
 ### 3. Add the Component Variables
 
@@ -52,39 +52,39 @@ This script reads its configuration from **Component Variables**:
 | `AgentOrganization` | String | No | Your org/tenant ID, passed to the MSI as the `ORGANIZATION` property |
 | `ExpectedPublisherCN` | String | No | Expected Authenticode signer subject CN, e.g. `Acium, Inc.` — when set, an MSI not validly signed by it is refused |
 
-![The three Component Variables filled in: AgentDownloadUrl, AgentOrganization, ExpectedPublisherCN](images/02b-component-variables-filled.png)
+![The three Component Variables filled in: AgentDownloadUrl, AgentOrganization, ExpectedPublisherCN](images/03-component-variables-filled.png)
 
 > Bumping to a new sensor version later is just updating `AgentDownloadUrl` — you don't need to edit the script itself.
 
 Save the Component once these are in place.
 
-### 4. Create a recurring Job
+### 5. Create a recurring Job
 
 Execution context (System vs. logged-on user) isn't set on the Component itself — it's set per-Job, in the last step below.
 
 **a.** Go to **Automation > Jobs**, and click **Create Job**.
 
-![Automation > Jobs, with the Create Job button highlighted](images/04-automation-jobs-create-job.png)
+![Automation > Jobs, with the Create Job button highlighted](images/05-automation-jobs-create-job.png)
 
 **b.** Give the Job a **Name**, then click **Add Component**.
 
-![Create a Job: Name field and Add Component button](images/05-create-a-job-name.png)
+![Create a Job: Name field and Add Component button](images/05a-job-name-add-component.png)
 
 **c.** In the panel that opens, find the Component you created (e.g. "Acium Sensor") and click **Add**.
 
-![Add Component panel, with the Acium Sensor component highlighted](images/06-add-component-panel.png)
+![Add Component panel, with the Acium Sensor component highlighted](images/05b-add-component-panel.png)
 
 **d.** Confirm/override the Component's variable value(s) for this Job — at minimum, `AgentDownloadUrl` — then add your **Targets** (devices, sites, filters, or groups).
 
-![Job's Components section showing AgentDownloadUrl highlighted, and the Targets section below it](images/07-job-variable-value-and-targets.png)
+![Job's Components section showing AgentDownloadUrl highlighted, and the Targets section below it](images/05c-variable-value-and-targets.png)
 
 **e.** Scroll down to **Schedule** and set it to run on a recurring basis (e.g. daily). Under **Execution**, choose **Run as system account** (not "Run as a logged in user"), then click **Create Job**.
 
-![Execution section with Run as system account selected, and the Create Job button](images/08-execution-run-as-system-account.png)
+![Execution section with Run as system account selected, and the Create Job button](images/05d-execution-run-as-system-account.png)
 
 Because the script checks for changes before doing any real work, recurring execution is cheap — most runs will be a quick no-op. A completed Job's **Results** column shows a quick green/red rollup per run; drill into an individual run for full stdout if something failed.
 
-![Jobs list showing a mix of successful and failed run results](images/09-job-results-success-and-failure.png)
+![Jobs list showing a mix of successful and failed run results](images/06-job-results-success-and-failure.png)
 
 ## Logs
 
