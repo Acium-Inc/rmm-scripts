@@ -1,19 +1,23 @@
-﻿#Requires -Version 5.0
+#Requires -Version 5.0
 
 <#
 .SYNOPSIS
     Downloads and installs the Acium Sensor agent from a pinned URL.
-    Generic version — all configuration is hardcoded in the script itself,
-    so it can be run from any RMM (or manually) without needing that
-    platform's variable/parameter system. Designed to run as SYSTEM on the
-    target machine.
+    Intune Remediation script — this is the "remediate" half of a
+    Remediations pair (see intune-acium-detection.ps1 for the "detect"
+    half). Intune runs this only when the detection script reports the
+    device non-compliant, in the SYSTEM context, on the schedule you
+    configure for the Remediation.
 
 .DESCRIPTION
     On each run, in order:
       1. Takes a machine-wide lock so two overlapping runs can't stack
+         (a Remediation re-run overlapping a slow previous run, or a
+         manual "Run remediation script" stacked on a scheduled one)
       2. Checks whether the file at the URL has changed since the last
-         successful run (skips entirely if not — important since this runs
-         on a recurring schedule, not just once)
+         successful run (skips entirely if not — this script is written
+         to be safe to run outside the detect/remediate cycle too, e.g.
+         from "Run remediation script" in the console)
       3. Downloads the installer package (a .zip) and verifies its SHA256
          against the last successful install — a second, server-independent
          way to answer "did anything actually change?"
@@ -30,14 +34,21 @@
     whenever this script's logic changes, and add an entry to
     CHANGELOG.md at the repo root describing what changed and why.
 
-    CONFIGURATION: All configuration is hardcoded directly in SECTION 1
-    below. Bumping to a new agent version means editing $DownloadUrl in
-    this script and redeploying it — there is no external variable to
-    update instead. This keeps the script self-contained and behaving
-    identically no matter what runs it (any RMM platform, a scheduled
-    task, or manually). $Organization (optional) sets which organization/
-    tenant the installed sensor reports under, passed to the MSI as the
-    ORGANIZATION property when set.
+    CONFIGURATION: Intune Remediation scripts do not support the kind of
+    per-deployment variable/parameter system Datto RMM or NinjaOne expose
+    (there is no "Script Variables" UI for Remediations) — so, like the
+    generic/ script in this repo, all configuration is hardcoded directly
+    in SECTION 1 below between the `EDIT THESE VALUES` markers. Bumping to
+    a new agent version means editing $DownloadUrl in THIS FILE and
+    reassigning/re-saving the Remediation (Intune only re-pushes a script
+    to devices when its content changes) — there is no external variable
+    to update instead.
+
+    IMPORTANT: $DownloadUrl here MUST be kept in sync with the
+    $DownloadUrl hardcoded in intune-acium-detection.ps1. Detection compares
+    its own copy against the last-installed state to decide whether to
+    call this script at all; if the two files disagree, detection can
+    report "compliant" for a version this script would actually install.
 
     VERIFY THE PRODUCTCODE: $ProductCode below has not been confirmed
     against a real Acium Sensor MSI. To get the true value, run this on one
@@ -49,17 +60,21 @@
           Select-Object PSChildName
 
     The key name IS the ProductCode. Until it's confirmed, the registry
-    cross-check in SECTION 7 covers for it and logs the correct value.
+    cross-check in SECTION 8 covers for it and logs the correct value.
 
-    RECURRING-RUN NOTE: Since this script may run on a schedule, it needs a
-    reliable way to know "did anything actually change since last time?"
-    It uses two independent signals: the ETag (a fingerprint the web server
-    sends for the file) as a cheap pre-download check, and the SHA256 of
-    the downloaded package as a check that works no matter what headers the
-    server does or doesn't send. Either one matching, combined with the
-    sensor actually being installed, is enough to skip.
+    RECURRING-RUN NOTE: Since Remediations run on a recurring schedule,
+    this script needs a reliable way to know "did anything actually change
+    since last time?" It uses two independent signals: the ETag (a
+    fingerprint the web server sends for the file) as a cheap pre-download
+    check, and the SHA256 of the downloaded package as a check that works
+    no matter what headers the server does or doesn't send. Either one
+    matching, combined with the sensor actually being installed, is enough
+    to skip — which matters because this script can also run standalone
+    (e.g. "Run remediation script" in the console) outside the normal
+    detect-then-remediate flow.
 
-    Exit codes (your RMM reads this to decide if the run succeeded or failed):
+    Exit codes (Intune records this as the Remediation script's result;
+    non-zero surfaces as a remediation failure in the console):
         0   - Success (installed, already up to date, or deferred pending
               a reboot — see the log for which)
         1   - Download failed
@@ -86,14 +101,16 @@ $ErrorActionPreference = 'Stop'
 # This script's own revision (not the agent's — see $DownloadUrl below for
 # that). Bump this whenever the script's logic changes, and record the
 # change in CHANGELOG.md at the repo root.
-$ScriptVersion = '1.2.1'
+$ScriptVersion = '1.0.2'
 
 # --- EDIT THESE VALUES TO CONFIGURE A DEPLOYMENT ---
+# Keep $DownloadUrl in sync with the copy in intune-acium-detection.ps1 —
+# see .NOTES above.
 
-# Direct URL to the pinned agent zip. Baked into the script itself (rather
-# than read from an RMM variable) so it behaves identically no matter what
-# platform runs it. Update this and redeploy when a new agent version needs
-# to go out.
+# Direct URL to the pinned agent zip. Baked into the script itself, since
+# Intune Remediations have no equivalent of a Component Variable. Update
+# this and re-save the Remediation (in both this file and the detection
+# script) when a new agent version needs to go out.
 $DownloadUrl = 'https://storage.googleapis.com/ebm-sensors-prod/win/acium-sensor-setup-0.16.8.zip'
 
 # The organization/tenant ID this sensor should report under, passed to the
@@ -111,25 +128,27 @@ $ExpectedPublisherCN = ''
 # --- END CONFIGURABLE VALUES ---
 
 # The MSI's ProductCode GUID for Acium Sensor. SEE "VERIFY THE PRODUCTCODE"
-# IN THE HEADER — this value is unconfirmed. It is used in SECTION 7 to ask
+# IN THE HEADER — this value is unconfirmed. It is used in SECTION 8 to ask
 # Windows Installer whether the product is already installed, which decides
 # whether the install needs REINSTALL=ALL / REINSTALLMODE=vomus (correct
 # only for a reinstall/repair) or a plain /i (needed for a genuine
 # first-time install). If this GUID is wrong, that check silently always
-# answers "not installed" — so SECTION 7 also cross-checks the registry and
+# answers "not installed" — so SECTION 8 also cross-checks the registry and
 # logs the real value.
 $ProductCode = '{8F3A2E1D-6B4C-4F7E-9A5B-2C8D1E9F3A7B}'
 
 # Used by the registry cross-check to find the product by name when the
 # ProductCode above doesn't match anything. Keep this SPECIFIC — a loose
 # pattern that also matches some other Acium-branded MSI would hand the
-# cross-check the wrong product's ProductCode. See SECTION 8.
+# cross-check the wrong product's ProductCode. See SECTION 8. Also read by
+# intune-acium-detection.ps1's own registry cross-check.
 $DisplayNamePattern = 'Acium Sensor*'
 
 # The Windows service the MSI installs. Presence of the service — not
 # whether it happens to be running right now — is what "installed" means
 # here: a crashed or stopped service is still installed, and reinstalling
-# it on every scheduled run wouldn't fix it anyway.
+# it on every scheduled run wouldn't fix it anyway. Also read by
+# intune-acium-detection.ps1.
 $ServiceName = 'AciumSensor'
 
 # Fallback only, for the case where the service is registered under a name
@@ -138,7 +157,8 @@ $ProcessName = 'AciumSensor'
 
 # Where we'll write log files and temporarily store the downloaded package.
 # ProgramData is used because it's writable by SYSTEM and survives reboots,
-# so logs are still there later if you need to troubleshoot a machine.
+# so logs are still there later if you need to troubleshoot a machine. Also
+# read by intune-acium-detection.ps1 (StateFile only, read-only).
 $RootDir     = 'C:\ProgramData\AciumSensor'
 $LogDir      = Join-Path $RootDir 'Logs'
 $WorkDir     = Join-Path $RootDir 'Install'
@@ -147,8 +167,8 @@ $MsiFileName = 'AciumSensorInstall.msi'                 # the installer file we'
 $MsiLogFile  = Join-Path $LogDir 'msi-install.log'      # Windows Installer's own detailed log
 
 # Where we remember what we last successfully installed (the server's ETag
-# and the package's SHA256), so the next scheduled run can tell whether
-# anything actually changed.
+# and the package's SHA256), so the next run can tell whether anything
+# actually changed. intune-acium-detection.ps1 reads this same file.
 $StateFile   = Join-Path $WorkDir 'last-installed.json'
 
 # Rotate a log once it passes this size rather than letting it grow forever
@@ -205,9 +225,9 @@ function Protect-Directory {
 # Deliberately NOT $RootDir. That's the sensor's own directory
 # (C:\ProgramData\AciumSensor) and the installed service may keep state
 # there under an identity other than SYSTEM/Administrators — stripping its
-# ACEs on every scheduled run could break the product we're deploying.
-# $LogDir and $WorkDir are the ones that matter anyway: they hold the MSI
-# we execute as SYSTEM and the path we recursively delete.
+# ACEs on every run could break the product we're deploying. $LogDir and
+# $WorkDir are the ones that matter anyway: they hold the MSI we execute as
+# SYSTEM and the path we recursively delete.
 $aclResults = @{}
 foreach ($dir in @($LogDir, $WorkDir)) {
     $aclResults[$dir] = Protect-Directory -Path $dir
@@ -220,7 +240,8 @@ if ((Test-Path -LiteralPath $LogFile) -and ((Get-Item -LiteralPath $LogFile).Len
 
 # Write-Log adds a timestamp and saves the message to our log file, so
 # anyone troubleshooting later has a full history on disk — not just
-# whatever the RMM happened to capture from that one run.
+# whatever Intune captured as the Remediation's output (which is truncated
+# and only shown for the most recent run).
 #
 # It must never throw. Under $ErrorActionPreference='Stop', a log file
 # locked by a concurrent run would otherwise become an unhandled
@@ -242,11 +263,12 @@ function Write-Log {
 
 # --- Machine-wide lock ---
 #
-# A recurring RMM job can overlap with a slow previous run (or with a
-# manual run). Two copies racing means two msiexec calls, a shared work
-# directory being deleted out from under one of them, and a corrupt state
-# file. Whoever gets the mutex wins; the other exits cleanly as a no-op.
-# The OS releases the mutex when the process ends, including on a crash.
+# A Remediation re-run can overlap with a slow previous run (or with a
+# manual "Run remediation script"). Two copies racing means two msiexec
+# calls, a shared work directory being deleted out from under one of them,
+# and a corrupt state file. Whoever gets the mutex wins; the other exits
+# cleanly as a no-op. The OS releases the mutex when the process ends,
+# including on a crash.
 $lockName = 'Global\AciumSensorDeploy'
 $mutex    = New-Object System.Threading.Mutex($false, $lockName)
 $haveLock = $false
@@ -277,9 +299,9 @@ foreach ($dir in $aclResults.Keys) {
 }
 
 # Log exactly which account this script is actually running as. This is the
-# definitive way to confirm whether the RMM is truly executing as SYSTEM
-# (should show "NT AUTHORITY\SYSTEM") — useful if a UAC prompt or
-# permission issue shows up and it's unclear what context it ran under.
+# definitive way to confirm the Remediation is truly executing as SYSTEM
+# (should show "NT AUTHORITY\SYSTEM") — depends on "Run this script using
+# the logged-on credentials" being set to No on the Remediation.
 $currentIdentity = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 Write-Log "Running as: $currentIdentity"
 
@@ -353,10 +375,10 @@ if ($pendingReboot) {
 # Add TLS 1.2 (and 1.3 where the framework knows about it) to whatever is
 # already enabled, rather than replacing the set.
 #
-# The old script assigned `= Tls12`, which on a machine already negotiating
-# TLS 1.3 silently turned it off; and when SecurityProtocol is
-# SystemDefault (0), assigning narrows the OS's own choice rather than
-# widening it. So: leave SystemDefault alone, and OR into anything else.
+# Assigning `= Tls12` on a machine already negotiating TLS 1.3 would
+# silently turn it off; and when SecurityProtocol is SystemDefault (0),
+# assigning narrows the OS's own choice rather than widening it. So: leave
+# SystemDefault alone, and OR into anything else.
 function Set-SecurityProtocol {
     $current = [Net.ServicePointManager]::SecurityProtocol
     if ($current -eq 0) { return }   # SystemDefault — the OS already picks correctly.
@@ -371,13 +393,13 @@ function Set-SecurityProtocol {
 }
 
 # WebClient rather than Invoke-WebRequest on purpose: in Windows PowerShell
-# 5.1 (what most RMM scripting engines run under), Invoke-WebRequest reads
-# the whole file into memory before writing it to disk and renders a
-# progress bar that can make downloads dramatically slower. WebClient
-# streams straight to disk.
+# 5.1 (what the Intune Management Extension runs scripts under),
+# Invoke-WebRequest reads the whole file into memory before writing it to
+# disk and renders a progress bar that can make downloads dramatically
+# slower. WebClient streams straight to disk.
 #
 # Retries because a transient blip on one endpoint out of a few hundred
-# shouldn't surface as a deployment failure in the RMM dashboard.
+# shouldn't surface as a remediation failure in the Intune console.
 function Invoke-Download {
     param(
         [string]$Url,
@@ -411,8 +433,8 @@ function Invoke-Download {
 #
 # The service's existence, not a running process, is the signal. A service
 # that's installed but stopped or crash-looping is still installed;
-# treating it as missing (which the old process check did) meant
-# reinstalling on every single scheduled run without ever fixing it.
+# treating it as missing would mean reinstalling on every single run
+# without ever fixing it.
 function Get-SensorInstallState {
     $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
     if ($service) {
@@ -468,8 +490,11 @@ function Find-InstalledProduct {
 
 # =========================================================================
 # SECTION 4: CHANGE CHECK (cheap pass, before downloading anything)
-# Since this script may run on a recurring schedule, we need to know
-# whether it's safe to skip this time. That's only true if BOTH hold:
+# Since this script can run outside the normal detect/remediate cycle
+# (e.g. "Run remediation script" in the console, or a re-run before the
+# next detection pass), it needs its own reliable way to know "did
+# anything actually change since last time?" That's only true if BOTH
+# hold:
 #   (a) the file at the URL hasn't changed since our last successful
 #       install (checked via ETag, the server's fingerprint for the file)
 #   (b) the sensor is actually still installed on THIS machine
@@ -564,10 +589,10 @@ try {
 #
 # This is the one that doesn't depend on the server. If the bucket ever
 # stops returning an ETag header — a config change, a proxy stripping
-# headers — the old script's only change signal disappeared, and it would
-# reinstall the MSI on every scheduled run across the whole fleet while
-# reporting success every time. Comparing the actual bytes we downloaded
-# against the bytes we last installed catches that regardless.
+# headers — the ETag check's only signal disappears, and the script would
+# reinstall the MSI on every run while reporting success every time.
+# Comparing the actual bytes we downloaded against the bytes we last
+# installed catches that regardless.
 $currentHash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash
 Write-Log "Package SHA256: $currentHash"
 
@@ -667,16 +692,15 @@ if ($aspNetCoreInstalled) {
 
     # STOP HERE if the runtime needs a reboot.
     #
-    # The old script logged 3010 as success and immediately ran the sensor
-    # MSI — whose service must start for the install to commit. That is
-    # precisely the 1603/1920 rollback this whole section exists to
-    # prevent, so continuing would reproduce the bug the check was written
-    # to avoid. Exit 0 (not a failure — nothing is broken, the work is just
-    # incomplete) and let the next scheduled run finish once the machine
-    # has rebooted. No state is saved, so the next run does the full
-    # install.
+    # Logging 3010 as success and immediately running the sensor MSI —
+    # whose service must start for the install to commit — is precisely the
+    # 1603/1920 rollback this whole section exists to prevent, so
+    # continuing would reproduce it. Exit 0 (not a failure — nothing is
+    # broken, the work is just incomplete) and let the next Remediation run
+    # finish once the machine has rebooted. No state is saved, so the next
+    # run does the full install.
     if ($rebootRequired) {
-        Write-Log "Deferring the sensor install until after the pending reboot. The next scheduled run will complete it." 'WARN'
+        Write-Log "Deferring the sensor install until after the pending reboot. The next Remediation run will complete it." 'WARN'
         Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
         Write-Log "=== Deployment deferred (reboot required for prerequisite) ==="
         exit 0
@@ -853,9 +877,9 @@ try {
     Write-Log "Install mode: $(if ($isProductInstalled) { 'reinstall/repair over existing install' } else { 'first-time install' })"
     Write-Log "Running msiexec silently..."
 
-    # Rotate the MSI log, then append rather than truncate — the old script
-    # overwrote it on every run, so by the time anyone looked at a machine
-    # the log of the failure they cared about was already gone.
+    # Rotate the MSI log, then append rather than truncate, so by the time
+    # anyone looks at a machine the log of the failure they care about is
+    # still there.
     if ((Test-Path -LiteralPath $MsiLogFile) -and ((Get-Item -LiteralPath $MsiLogFile).Length -gt $MaxLogBytes)) {
         Move-Item -LiteralPath $MsiLogFile -Destination "$MsiLogFile.1" -Force -ErrorAction SilentlyContinue
     }
@@ -891,9 +915,9 @@ try {
     Write-Log "msiexec $msiArgLine"
 
     # 1618 means another Windows Installer transaction is in progress —
-    # extremely common when an RMM fires several deployments at once, or
-    # Windows Update is mid-install. It's transient, so retry rather than
-    # reporting a deployment failure.
+    # extremely common when several device management tasks fire at once,
+    # or Windows Update is mid-install. It's transient, so retry rather
+    # than reporting a remediation failure.
     $maxMsiAttempts = 4
     $exitCode = $null
     for ($attempt = 1; $attempt -le $maxMsiAttempts; $attempt++) {
@@ -946,10 +970,11 @@ try {
 
 # =========================================================================
 # SECTION 9: SAVE STATE
-# Record what we just installed so the NEXT run of this recurring job can
-# compare against it and skip if nothing changed. We only reach here if the
-# install succeeded AND verified — state is never saved for a run that
-# failed or silently installed nothing.
+# Record what we just installed so the NEXT run (whether the next
+# Remediation cycle or a manual re-run) can compare against it and skip if
+# nothing changed. We only reach here if the install succeeded AND
+# verified — state is never saved for a run that failed or silently
+# installed nothing. intune-acium-detection.ps1 reads this same file.
 # =========================================================================
 
 try {

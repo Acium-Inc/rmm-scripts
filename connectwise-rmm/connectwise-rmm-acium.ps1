@@ -1,12 +1,10 @@
-﻿#Requires -Version 5.0
+#Requires -Version 5.0
 
 <#
 .SYNOPSIS
     Downloads and installs the Acium Sensor agent from a pinned URL.
-    Generic version — all configuration is hardcoded in the script itself,
-    so it can be run from any RMM (or manually) without needing that
-    platform's variable/parameter system. Designed to run as SYSTEM on the
-    target machine.
+    Designed to run as a ConnectWise RMM script, scheduled recurring
+    against a device/site, executed as SYSTEM on the target machine.
 
 .DESCRIPTION
     On each run, in order:
@@ -30,14 +28,42 @@
     whenever this script's logic changes, and add an entry to
     CHANGELOG.md at the repo root describing what changed and why.
 
-    CONFIGURATION: All configuration is hardcoded directly in SECTION 1
-    below. Bumping to a new agent version means editing $DownloadUrl in
-    this script and redeploying it — there is no external variable to
-    update instead. This keeps the script self-contained and behaving
-    identically no matter what runs it (any RMM platform, a scheduled
-    task, or manually). $Organization (optional) sets which organization/
-    tenant the installed sensor reports under, passed to the MSI as the
-    ORGANIZATION property when set.
+    CONFIGURATION / UNVERIFIED — READ BEFORE DEPLOYING:
+    Datto RMM and NinjaOne both expose a documented, per-script "Component
+    Variable" / "Script Variable" system that injects named values into the
+    script's process as environment variables at runtime. ConnectWise RMM
+    (the Asio-based SaaS RMM product ConnectWise currently markets as
+    "ConnectWise RMM" — distinct from ConnectWise Automate/LabTech, which
+    is a separate product with its own %variable% scripting engine) does
+    have its own variable concepts (predefined variables mapped to custom
+    fields, user-defined variables referenced with %VariableName% syntax,
+    and %output% for capturing a script step's output) used inside its
+    block-based script/automation editor. Public documentation available
+    at the time this script was written did not confirm whether a single
+    "PowerShell Script" step can receive an arbitrary named string variable
+    as a genuine $env: variable the way Datto/NinjaOne do, as opposed to
+    ConnectWise's %var% substitution happening only between chained script
+    blocks in its own editor.
+
+    Rather than guess at a syntax that could silently pass a literal
+    "%AgentDownloadUrl%" string into msiexec, this script follows the same
+    pattern as generic/generic-acium.ps1: ALL CONFIGURATION IS HARDCODED
+    below in SECTION 1, between the `EDIT THESE VALUES` markers. This is
+    guaranteed to work regardless of how ConnectWise RMM's variable system
+    behaves for a given tenant/script-step type. If your ConnectWise RMM
+    instance DOES support wiring a Company/Client custom field or
+    predefined variable into this script as a true environment variable,
+    you can switch SECTION 1 to read from $env: the same way
+    dattormm-acium.ps1 or ninjaone-acium.ps1 do — confirm the exact
+    variable name/casing ConnectWise exposes it under first, and update
+    this repo's CHANGELOG when you do.
+
+    Also UNVERIFIED: how ConnectWise RMM reads/reports this script's
+    process exit code in its script/task history UI. The script still
+    exits with the specific codes below (matching this repo's convention)
+    so anyone reading deploy.log or a raw exit-code column has the same
+    diagnostic detail as the other platforms' scripts — verify against
+    your own ConnectWise RMM instance's script result view.
 
     VERIFY THE PRODUCTCODE: $ProductCode below has not been confirmed
     against a real Acium Sensor MSI. To get the true value, run this on one
@@ -49,7 +75,7 @@
           Select-Object PSChildName
 
     The key name IS the ProductCode. Until it's confirmed, the registry
-    cross-check in SECTION 7 covers for it and logs the correct value.
+    cross-check in SECTION 8 covers for it and logs the correct value.
 
     RECURRING-RUN NOTE: Since this script may run on a schedule, it needs a
     reliable way to know "did anything actually change since last time?"
@@ -59,7 +85,7 @@
     server does or doesn't send. Either one matching, combined with the
     sensor actually being installed, is enough to skip.
 
-    Exit codes (your RMM reads this to decide if the run succeeded or failed):
+    Exit codes (ConnectWise RMM reads this to decide if the run succeeded or failed):
         0   - Success (installed, already up to date, or deferred pending
               a reboot — see the log for which)
         1   - Download failed
@@ -86,19 +112,21 @@ $ErrorActionPreference = 'Stop'
 # This script's own revision (not the agent's — see $DownloadUrl below for
 # that). Bump this whenever the script's logic changes, and record the
 # change in CHANGELOG.md at the repo root.
-$ScriptVersion = '1.2.1'
+$ScriptVersion = '1.0.2'
 
 # --- EDIT THESE VALUES TO CONFIGURE A DEPLOYMENT ---
+#
+# See the CONFIGURATION / UNVERIFIED note in .NOTES above for why these are
+# hardcoded here instead of read from a ConnectWise RMM variable.
 
-# Direct URL to the pinned agent zip. Baked into the script itself (rather
-# than read from an RMM variable) so it behaves identically no matter what
-# platform runs it. Update this and redeploy when a new agent version needs
-# to go out.
+# Direct URL to the pinned agent zip. Update this and redeploy the script
+# to ConnectWise RMM when a new agent version needs to go out.
 $DownloadUrl = 'https://storage.googleapis.com/ebm-sensors-prod/win/acium-sensor-setup-0.16.8.zip'
 
 # The organization/tenant ID this sensor should report under, passed to the
 # MSI as the ORGANIZATION property. Optional — leave blank to install
-# without setting it.
+# without setting it. If you maintain per-client copies of this script in
+# ConnectWise RMM, this is the one line that typically differs between them.
 $Organization = ''
 
 # Optional Authenticode hardening. When set to the expected signing
@@ -111,12 +139,12 @@ $ExpectedPublisherCN = ''
 # --- END CONFIGURABLE VALUES ---
 
 # The MSI's ProductCode GUID for Acium Sensor. SEE "VERIFY THE PRODUCTCODE"
-# IN THE HEADER — this value is unconfirmed. It is used in SECTION 7 to ask
+# IN THE HEADER — this value is unconfirmed. It is used in SECTION 8 to ask
 # Windows Installer whether the product is already installed, which decides
 # whether the install needs REINSTALL=ALL / REINSTALLMODE=vomus (correct
 # only for a reinstall/repair) or a plain /i (needed for a genuine
 # first-time install). If this GUID is wrong, that check silently always
-# answers "not installed" — so SECTION 7 also cross-checks the registry and
+# answers "not installed" — so SECTION 8 also cross-checks the registry and
 # logs the real value.
 $ProductCode = '{8F3A2E1D-6B4C-4F7E-9A5B-2C8D1E9F3A7B}'
 
@@ -220,7 +248,7 @@ if ((Test-Path -LiteralPath $LogFile) -and ((Get-Item -LiteralPath $LogFile).Len
 
 # Write-Log adds a timestamp and saves the message to our log file, so
 # anyone troubleshooting later has a full history on disk — not just
-# whatever the RMM happened to capture from that one run.
+# whatever ConnectWise RMM happened to capture from that one run.
 #
 # It must never throw. Under $ErrorActionPreference='Stop', a log file
 # locked by a concurrent run would otherwise become an unhandled
@@ -277,8 +305,8 @@ foreach ($dir in $aclResults.Keys) {
 }
 
 # Log exactly which account this script is actually running as. This is the
-# definitive way to confirm whether the RMM is truly executing as SYSTEM
-# (should show "NT AUTHORITY\SYSTEM") — useful if a UAC prompt or
+# definitive way to confirm whether ConnectWise RMM is truly executing as
+# SYSTEM (should show "NT AUTHORITY\SYSTEM") — useful if a UAC prompt or
 # permission issue shows up and it's unclear what context it ran under.
 $currentIdentity = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 Write-Log "Running as: $currentIdentity"
@@ -353,10 +381,10 @@ if ($pendingReboot) {
 # Add TLS 1.2 (and 1.3 where the framework knows about it) to whatever is
 # already enabled, rather than replacing the set.
 #
-# The old script assigned `= Tls12`, which on a machine already negotiating
-# TLS 1.3 silently turned it off; and when SecurityProtocol is
-# SystemDefault (0), assigning narrows the OS's own choice rather than
-# widening it. So: leave SystemDefault alone, and OR into anything else.
+# Assigning `= Tls12` on a machine already negotiating TLS 1.3 would
+# silently turn it off; and when SecurityProtocol is SystemDefault (0),
+# assigning narrows the OS's own choice rather than widening it. So: leave
+# SystemDefault alone, and OR into anything else.
 function Set-SecurityProtocol {
     $current = [Net.ServicePointManager]::SecurityProtocol
     if ($current -eq 0) { return }   # SystemDefault — the OS already picks correctly.
@@ -377,7 +405,7 @@ function Set-SecurityProtocol {
 # streams straight to disk.
 #
 # Retries because a transient blip on one endpoint out of a few hundred
-# shouldn't surface as a deployment failure in the RMM dashboard.
+# shouldn't surface as a deployment failure in the ConnectWise RMM dashboard.
 function Invoke-Download {
     param(
         [string]$Url,
@@ -411,8 +439,8 @@ function Invoke-Download {
 #
 # The service's existence, not a running process, is the signal. A service
 # that's installed but stopped or crash-looping is still installed;
-# treating it as missing (which the old process check did) meant
-# reinstalling on every single scheduled run without ever fixing it.
+# treating it as missing would mean reinstalling on every single scheduled
+# run without ever fixing it.
 function Get-SensorInstallState {
     $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
     if ($service) {
@@ -564,7 +592,7 @@ try {
 #
 # This is the one that doesn't depend on the server. If the bucket ever
 # stops returning an ETag header — a config change, a proxy stripping
-# headers — the old script's only change signal disappeared, and it would
+# headers — the ETag check's only signal disappears, and the script would
 # reinstall the MSI on every scheduled run across the whole fleet while
 # reporting success every time. Comparing the actual bytes we downloaded
 # against the bytes we last installed catches that regardless.
@@ -667,14 +695,13 @@ if ($aspNetCoreInstalled) {
 
     # STOP HERE if the runtime needs a reboot.
     #
-    # The old script logged 3010 as success and immediately ran the sensor
-    # MSI — whose service must start for the install to commit. That is
-    # precisely the 1603/1920 rollback this whole section exists to
-    # prevent, so continuing would reproduce the bug the check was written
-    # to avoid. Exit 0 (not a failure — nothing is broken, the work is just
-    # incomplete) and let the next scheduled run finish once the machine
-    # has rebooted. No state is saved, so the next run does the full
-    # install.
+    # Logging 3010 as success and immediately running the sensor MSI —
+    # whose service must start for the install to commit — is precisely the
+    # 1603/1920 rollback this whole section exists to prevent, so
+    # continuing would reproduce it. Exit 0 (not a failure — nothing is
+    # broken, the work is just incomplete) and let the next scheduled run
+    # finish once the machine has rebooted. No state is saved, so the next
+    # run does the full install.
     if ($rebootRequired) {
         Write-Log "Deferring the sensor install until after the pending reboot. The next scheduled run will complete it." 'WARN'
         Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
@@ -853,9 +880,9 @@ try {
     Write-Log "Install mode: $(if ($isProductInstalled) { 'reinstall/repair over existing install' } else { 'first-time install' })"
     Write-Log "Running msiexec silently..."
 
-    # Rotate the MSI log, then append rather than truncate — the old script
-    # overwrote it on every run, so by the time anyone looked at a machine
-    # the log of the failure they cared about was already gone.
+    # Rotate the MSI log, then append rather than truncate, so by the time
+    # anyone looks at a machine the log of the failure they care about is
+    # still there.
     if ((Test-Path -LiteralPath $MsiLogFile) -and ((Get-Item -LiteralPath $MsiLogFile).Length -gt $MaxLogBytes)) {
         Move-Item -LiteralPath $MsiLogFile -Destination "$MsiLogFile.1" -Force -ErrorAction SilentlyContinue
     }

@@ -1,12 +1,10 @@
-﻿#Requires -Version 5.0
+#Requires -Version 5.0
 
 <#
 .SYNOPSIS
     Downloads and installs the Acium Sensor agent from a pinned URL.
-    Generic version — all configuration is hardcoded in the script itself,
-    so it can be run from any RMM (or manually) without needing that
-    platform's variable/parameter system. Designed to run as SYSTEM on the
-    target machine.
+    Designed to run as a Syncro script (executed as SYSTEM on the target
+    machine), scheduled recurring via a Syncro Policy's Script Schedule.
 
 .DESCRIPTION
     On each run, in order:
@@ -26,18 +24,47 @@
 
 .NOTES
     VERSION: $ScriptVersion in SECTION 1 below tracks this script's own
-    revision, separate from the agent version in $DownloadUrl. Bump it
+    revision, separate from the agent version in AgentDownloadUrl. Bump it
     whenever this script's logic changes, and add an entry to
     CHANGELOG.md at the repo root describing what changed and why.
 
-    CONFIGURATION: All configuration is hardcoded directly in SECTION 1
-    below. Bumping to a new agent version means editing $DownloadUrl in
-    this script and redeploying it — there is no external variable to
-    update instead. This keeps the script self-contained and behaving
-    identically no matter what runs it (any RMM platform, a scheduled
-    task, or manually). $Organization (optional) sets which organization/
-    tenant the installed sensor reports under, passed to the MSI as the
-    ORGANIZATION property when set.
+    CONFIGURATION: Syncro Script Variables (added via the script editor's
+    "Add Script Variable" button, type String) expected — set these in
+    Syncro, NOT hardcoded in this script:
+
+        AgentDownloadUrl    - REQUIRED. Direct URL to the pinned agent zip.
+
+        AgentOrganization   - OPTIONAL. The organization/tenant ID these
+                              endpoints report under, passed to the MSI as
+                              the ORGANIZATION property. Leave unset to
+                              install without it.
+
+        ExpectedPublisherCN - OPTIONAL. Expected Authenticode signing
+                              certificate subject CN. When set, an MSI
+                              that isn't validly signed by it is refused
+                              (exit 6). Leave unset to log the signature
+                              status without enforcing it.
+
+    HOW THESE REACH THE SCRIPT: unlike Datto RMM/NinjaOne, which inject
+    Component/Script Variables as environment variables ($env:Name),
+    Syncro's own documentation example shows a script variable named
+    `runtime` referenced directly as `$runtime` in the script body (not
+    `$env:runtime`) — https://docs.syncrosecure.com/scripting-apis/manage-scripts
+    ("Make sure to add your variables in the text editor for your Script
+    (e.g., echo "$runtime")."). That confirms the reference syntax is a
+    bare top-level PowerShell variable matching the name you give it in
+    Syncro's UI. The exact injection mechanism/timing (literal
+    substitution vs. a preamble Syncro prepends before this script body
+    runs) isn't publicly documented in more detail, but the naming
+    convention above (AgentDownloadUrl, not DownloadUrl) keeps Syncro's
+    injected variables from colliding with this script's own internal
+    $DownloadUrl/$Organization names in SECTION 1 below regardless of
+    which mechanism it turns out to be. If your tenant's behavior differs,
+    confirm against current Syncro docs and adjust SECTION 1 accordingly.
+
+    Bumping to a new agent version later is just updating the
+    AgentDownloadUrl Script Variable — you don't need to edit the script
+    itself.
 
     VERIFY THE PRODUCTCODE: $ProductCode below has not been confirmed
     against a real Acium Sensor MSI. To get the true value, run this on one
@@ -49,7 +76,7 @@
           Select-Object PSChildName
 
     The key name IS the ProductCode. Until it's confirmed, the registry
-    cross-check in SECTION 7 covers for it and logs the correct value.
+    cross-check in SECTION 8 covers for it and logs the correct value.
 
     RECURRING-RUN NOTE: Since this script may run on a schedule, it needs a
     reliable way to know "did anything actually change since last time?"
@@ -59,23 +86,22 @@
     server does or doesn't send. Either one matching, combined with the
     sensor actually being installed, is enough to skip.
 
-    Exit codes (your RMM reads this to decide if the run succeeded or failed):
+    Exit codes (Syncro reads this to decide if the run succeeded or failed):
         0   - Success (installed, already up to date, or deferred pending
               a reboot — see the log for which)
         1   - Download failed
         2   - Could not secure the working/log directory (ACL hardening
               failed) — refused to proceed with a privileged install
         3   - Install failed
-        4   - Missing or invalid configuration value in the script
+        4   - Missing or invalid Script Variable
         5   - Zip extraction failed / MSI not found inside package
         6   - MSI failed Authenticode signature verification
 #>
 
 # =========================================================================
 # SECTION 1: CONFIG
-# Set up file paths and the settings this script needs. Edit the values
-# in this section to configure a deployment — nothing runs yet, this is
-# just defining values to use later.
+# Set up file paths and read in the settings Syncro passes to the script.
+# Nothing runs yet in this section — just defining values.
 # =========================================================================
 
 # Treat any unhandled error as script-stopping. Without this, some failures
@@ -83,40 +109,45 @@
 # unattended install.
 $ErrorActionPreference = 'Stop'
 
-# This script's own revision (not the agent's — see $DownloadUrl below for
-# that). Bump this whenever the script's logic changes, and record the
+# This script's own revision (not the agent's — see AgentDownloadUrl below
+# for that). Bump this whenever the script's logic changes, and record the
 # change in CHANGELOG.md at the repo root.
-$ScriptVersion = '1.2.1'
+$ScriptVersion = '1.0.2'
 
-# --- EDIT THESE VALUES TO CONFIGURE A DEPLOYMENT ---
+# --- Syncro Script Variables (see .NOTES above) ---
+#
+# Syncro injects these as top-level PowerShell variables matching the
+# names you give them in the "Add Script Variable" UI. Configure them
+# there rather than editing this file, so a version bump or a new
+# customer's org ID is a variable change, not a code change.
 
-# Direct URL to the pinned agent zip. Baked into the script itself (rather
-# than read from an RMM variable) so it behaves identically no matter what
-# platform runs it. Update this and redeploy when a new agent version needs
-# to go out.
-$DownloadUrl = 'https://storage.googleapis.com/ebm-sensors-prod/win/acium-sensor-setup-0.16.8.zip'
+# REQUIRED. Direct URL to the pinned agent zip. If Syncro never defines
+# $AgentDownloadUrl (variable not configured), PowerShell evaluates the
+# undefined variable as $null rather than throwing — the blank-check below
+# in SECTION 2 catches that case with a clear error instead.
+$DownloadUrl = $AgentDownloadUrl
 
-# The organization/tenant ID this sensor should report under, passed to the
-# MSI as the ORGANIZATION property. Optional — leave blank to install
-# without setting it.
-$Organization = ''
+# OPTIONAL. The organization/tenant ID these endpoints report under, passed
+# to the MSI as the ORGANIZATION property. Leave the Script Variable unset
+# to install without it.
+$Organization = $AgentOrganization
 
-# Optional Authenticode hardening. When set to the expected signing
-# certificate's subject CN (e.g. 'Acium, Inc.'), the script REFUSES to run
-# an MSI that isn't validly signed by it, and exits 6. Leave blank to run
-# unsigned/unverified packages but log what the signature actually says —
-# fill this in once you've confirmed the real publisher name from the log.
-$ExpectedPublisherCN = ''
+# OPTIONAL. Expected Authenticode signing certificate subject CN (e.g.
+# 'Acium, Inc.'). When set, the script REFUSES to run an MSI that isn't
+# validly signed by it, and exits 6. Leave unset to run unverified packages
+# but log what the signature actually says — fill it in once you've
+# confirmed the real publisher name from the log. Referenced directly
+# below under the same name Syncro injects it as.
 
-# --- END CONFIGURABLE VALUES ---
+# --- END SCRIPT VARIABLES ---
 
 # The MSI's ProductCode GUID for Acium Sensor. SEE "VERIFY THE PRODUCTCODE"
-# IN THE HEADER — this value is unconfirmed. It is used in SECTION 7 to ask
+# IN THE HEADER — this value is unconfirmed. It is used in SECTION 8 to ask
 # Windows Installer whether the product is already installed, which decides
 # whether the install needs REINSTALL=ALL / REINSTALLMODE=vomus (correct
 # only for a reinstall/repair) or a plain /i (needed for a genuine
 # first-time install). If this GUID is wrong, that check silently always
-# answers "not installed" — so SECTION 7 also cross-checks the registry and
+# answers "not installed" — so SECTION 8 also cross-checks the registry and
 # logs the real value.
 $ProductCode = '{8F3A2E1D-6B4C-4F7E-9A5B-2C8D1E9F3A7B}'
 
@@ -220,7 +251,7 @@ if ((Test-Path -LiteralPath $LogFile) -and ((Get-Item -LiteralPath $LogFile).Len
 
 # Write-Log adds a timestamp and saves the message to our log file, so
 # anyone troubleshooting later has a full history on disk — not just
-# whatever the RMM happened to capture from that one run.
+# whatever Syncro happened to capture from that one run.
 #
 # It must never throw. Under $ErrorActionPreference='Stop', a log file
 # locked by a concurrent run would otherwise become an unhandled
@@ -277,7 +308,7 @@ foreach ($dir in $aclResults.Keys) {
 }
 
 # Log exactly which account this script is actually running as. This is the
-# definitive way to confirm whether the RMM is truly executing as SYSTEM
+# definitive way to confirm whether Syncro is truly executing as SYSTEM
 # (should show "NT AUTHORITY\SYSTEM") — useful if a UAC prompt or
 # permission issue shows up and it's unclear what context it ran under.
 $currentIdentity = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
@@ -287,7 +318,7 @@ Write-Log "Running as: $currentIdentity"
 # signals "this is a configuration problem", not a download or install
 # failure — someone editing the script left a required value empty.
 if (-not $DownloadUrl) {
-    Write-Log "ERROR: Missing required configuration value (`$DownloadUrl is empty in SECTION 1)." 'ERROR'
+    Write-Log "ERROR: Missing required Script Variable (AgentDownloadUrl)." 'ERROR'
     exit 4
 }
 
@@ -295,7 +326,7 @@ if (-not $DownloadUrl) {
 # command line unambiguously. Reject it rather than building a mangled
 # command line and getting a confusing install failure downstream.
 if ($Organization -match '"') {
-    Write-Log "ERROR: `$Organization contains a double quote, which cannot be passed to msiexec safely." 'ERROR'
+    Write-Log "ERROR: the AgentOrganization Script Variable contains a double quote, which cannot be passed to msiexec safely." 'ERROR'
     exit 4
 }
 
@@ -353,10 +384,10 @@ if ($pendingReboot) {
 # Add TLS 1.2 (and 1.3 where the framework knows about it) to whatever is
 # already enabled, rather than replacing the set.
 #
-# The old script assigned `= Tls12`, which on a machine already negotiating
-# TLS 1.3 silently turned it off; and when SecurityProtocol is
-# SystemDefault (0), assigning narrows the OS's own choice rather than
-# widening it. So: leave SystemDefault alone, and OR into anything else.
+# Assigning `= Tls12` on a machine already negotiating TLS 1.3 would
+# silently turn it off; and when SecurityProtocol is SystemDefault (0),
+# assigning narrows the OS's own choice rather than widening it. So: leave
+# SystemDefault alone, and OR into anything else.
 function Set-SecurityProtocol {
     $current = [Net.ServicePointManager]::SecurityProtocol
     if ($current -eq 0) { return }   # SystemDefault — the OS already picks correctly.
@@ -377,7 +408,7 @@ function Set-SecurityProtocol {
 # streams straight to disk.
 #
 # Retries because a transient blip on one endpoint out of a few hundred
-# shouldn't surface as a deployment failure in the RMM dashboard.
+# shouldn't surface as a deployment failure in the Syncro dashboard.
 function Invoke-Download {
     param(
         [string]$Url,
@@ -411,8 +442,8 @@ function Invoke-Download {
 #
 # The service's existence, not a running process, is the signal. A service
 # that's installed but stopped or crash-looping is still installed;
-# treating it as missing (which the old process check did) meant
-# reinstalling on every single scheduled run without ever fixing it.
+# treating it as missing would mean reinstalling on every single scheduled
+# run without ever fixing it.
 function Get-SensorInstallState {
     $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
     if ($service) {
@@ -564,7 +595,7 @@ try {
 #
 # This is the one that doesn't depend on the server. If the bucket ever
 # stops returning an ETag header — a config change, a proxy stripping
-# headers — the old script's only change signal disappeared, and it would
+# headers — the ETag check's only signal disappears, and the script would
 # reinstall the MSI on every scheduled run across the whole fleet while
 # reporting success every time. Comparing the actual bytes we downloaded
 # against the bytes we last installed catches that regardless.
@@ -667,14 +698,13 @@ if ($aspNetCoreInstalled) {
 
     # STOP HERE if the runtime needs a reboot.
     #
-    # The old script logged 3010 as success and immediately ran the sensor
-    # MSI — whose service must start for the install to commit. That is
-    # precisely the 1603/1920 rollback this whole section exists to
-    # prevent, so continuing would reproduce the bug the check was written
-    # to avoid. Exit 0 (not a failure — nothing is broken, the work is just
-    # incomplete) and let the next scheduled run finish once the machine
-    # has rebooted. No state is saved, so the next run does the full
-    # install.
+    # Logging 3010 as success and immediately running the sensor MSI —
+    # whose service must start for the install to commit — is precisely the
+    # 1603/1920 rollback this whole section exists to prevent, so
+    # continuing would reproduce it. Exit 0 (not a failure — nothing is
+    # broken, the work is just incomplete) and let the next scheduled run
+    # finish once the machine has rebooted. No state is saved, so the next
+    # run does the full install.
     if ($rebootRequired) {
         Write-Log "Deferring the sensor install until after the pending reboot. The next scheduled run will complete it." 'WARN'
         Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
@@ -755,9 +785,9 @@ try {
         }
         Write-Log "MSI signature verified against expected publisher."
     } elseif ($signature.Status -ne 'Valid') {
-        Write-Log "MSI is not validly signed ($($signature.Status)). Continuing because `$ExpectedPublisherCN is not set — set it in SECTION 1 to enforce this." 'WARN'
+        Write-Log "MSI is not validly signed ($($signature.Status)). Continuing because the ExpectedPublisherCN Script Variable is not set — set it to enforce this." 'WARN'
     } else {
-        Write-Log "MSI is validly signed. Set `$ExpectedPublisherCN to '$signerCN' in SECTION 1 to enforce this on every run." 'WARN'
+        Write-Log "MSI is validly signed. Set the ExpectedPublisherCN Script Variable to '$signerCN' to enforce this on every run." 'WARN'
     }
 } catch {
     if ($ExpectedPublisherCN) {
@@ -853,9 +883,9 @@ try {
     Write-Log "Install mode: $(if ($isProductInstalled) { 'reinstall/repair over existing install' } else { 'first-time install' })"
     Write-Log "Running msiexec silently..."
 
-    # Rotate the MSI log, then append rather than truncate — the old script
-    # overwrote it on every run, so by the time anyone looked at a machine
-    # the log of the failure they cared about was already gone.
+    # Rotate the MSI log, then append rather than truncate, so by the time
+    # anyone looks at a machine the log of the failure they care about is
+    # still there.
     if ((Test-Path -LiteralPath $MsiLogFile) -and ((Get-Item -LiteralPath $MsiLogFile).Length -gt $MaxLogBytes)) {
         Move-Item -LiteralPath $MsiLogFile -Destination "$MsiLogFile.1" -Force -ErrorAction SilentlyContinue
     }
@@ -873,8 +903,8 @@ try {
     # Built as one explicit string rather than a PowerShell array. The
     # array form looks safer but isn't here: PowerShell 5.1 quotes any
     # array element containing a space, so an $Organization of "my org"
-    # became  "ORGANIZATION=my org"  on the command line, which msiexec
-    # parses as a malformed property. MSI properties need the quotes
+    # would become  "ORGANIZATION=my org"  on the command line, which
+    # msiexec parses as a malformed property. MSI properties need the quotes
     # *inside* the argument —  ORGANIZATION="my org"  — which only building
     # the string ourselves gets right. ($Organization is validated for
     # embedded quotes in SECTION 2.)

@@ -73,6 +73,8 @@
         0   - Success (installed, already up to date, or deferred pending
               a reboot — see the log for which)
         1   - Download failed
+        2   - Could not secure the working/log directory (ACL hardening
+              failed) — refused to proceed with a privileged install
         3   - Install failed
         4   - Missing or invalid Component Variable
         5   - Zip extraction failed / MSI not found inside package
@@ -93,7 +95,7 @@ $ErrorActionPreference = 'Stop'
 # This script's own revision (not the agent's — see AgentDownloadUrl below
 # for that). Bump this whenever the script's logic changes, and record the
 # change in CHANGELOG.md at the repo root.
-$ScriptVersion = '1.1.0'
+$ScriptVersion = '1.2.1'
 
 # --- Datto RMM Component Variables (see .NOTES above) ---
 #
@@ -275,7 +277,13 @@ Write-Log "=== Deployment started (script version $ScriptVersion) ==="
 
 foreach ($dir in $aclResults.Keys) {
     if (-not $aclResults[$dir]) {
-        Write-Log "Could not harden ACL on $dir - continuing, but this directory may be writable by non-admins." 'WARN'
+        # Fail closed. This directory inherits ProgramData's default DACL,
+        # which lets standard users create/plant a junction in it — the
+        # exact scenario Protect-Directory exists to close off. Proceeding
+        # to stage and execute a privileged MSI (or recursively delete)
+        # here anyway would leave that attack live.
+        Write-Log "ERROR: Could not harden ACL on $dir - refusing to proceed with a privileged install against a directory that may still be writable by non-admins." 'ERROR'
+        exit 2
     }
 }
 
@@ -581,8 +589,17 @@ if ($lastHash -and ($currentHash -eq $lastHash) -and $installState.Installed) {
     # working again on the next run if the server has resumed sending one.
     if ($currentEtag -and ($currentEtag -ne $lastEtag)) {
         try {
-            @{ Etag = $currentEtag; Sha256 = $currentHash; InstalledAt = (Get-Date -Format 'o') } |
-                ConvertTo-Json | Set-Content -LiteralPath $StateFile
+            # Preserve the rest of the saved state (ProductCode/Version/
+            # ScriptVersion/InstalledAt) — this is a no-op run, not an
+            # install, so only the ETag actually needs refreshing.
+            [ordered]@{
+                Etag          = $currentEtag
+                Sha256        = $state.Sha256
+                ProductCode   = $state.ProductCode
+                Version       = $state.Version
+                ScriptVersion = $state.ScriptVersion
+                InstalledAt   = $state.InstalledAt
+            } | ConvertTo-Json | Set-Content -LiteralPath $StateFile
             Write-Log "Refreshed stored ETag for the next run's pre-download check."
         } catch {
             Write-Log "Could not refresh state file - $($_.Exception.Message)" 'WARN'
@@ -729,17 +746,22 @@ try {
 # the publisher signature is cheap defence in depth against a compromised
 # or misconfigured bucket.
 try {
-    $signature = Get-AuthenticodeSignature -LiteralPath $msiFile.FullName
-    $signerCN  = if ($signature.SignerCertificate) { $signature.SignerCertificate.Subject } else { '(none)' }
-    Write-Log "MSI signature status: $($signature.Status). Signer: $signerCN"
+    $signature     = Get-AuthenticodeSignature -LiteralPath $msiFile.FullName
+    $signerSubject = if ($signature.SignerCertificate) { $signature.SignerCertificate.Subject } else { '(none)' }
+    # Extract just the CN (simple name) rather than matching against the raw
+    # Subject string — a substring/wildcard match against the full Subject
+    # would let a different, unrelated certificate whose Subject merely
+    # contains the expected text (or wildcard characters) pass.
+    $signerCN      = if ($signature.SignerCertificate) { $signature.SignerCertificate.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false) } else { '(none)' }
+    Write-Log "MSI signature status: $($signature.Status). Signer: $signerSubject"
 
     if ($ExpectedPublisherCN) {
         if ($signature.Status -ne 'Valid') {
             Write-Log "ERROR: MSI signature is '$($signature.Status)', not 'Valid', and `$ExpectedPublisherCN is set. Refusing to install." 'ERROR'
             exit 6
         }
-        if ($signerCN -notlike "*$ExpectedPublisherCN*") {
-            Write-Log "ERROR: MSI is signed by '$signerCN', which does not match the expected publisher '$ExpectedPublisherCN'. Refusing to install." 'ERROR'
+        if ($signerCN -ne $ExpectedPublisherCN) {
+            Write-Log "ERROR: MSI is signed by '$signerSubject' (CN '$signerCN'), which does not match the expected publisher '$ExpectedPublisherCN'. Refusing to install." 'ERROR'
             exit 6
         }
         Write-Log "MSI signature verified against expected publisher."
