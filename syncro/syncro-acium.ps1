@@ -112,7 +112,7 @@ $ErrorActionPreference = 'Stop'
 # This script's own revision (not the agent's — see AgentDownloadUrl below
 # for that). Bump this whenever the script's logic changes, and record the
 # change in CHANGELOG.md at the repo root.
-$ScriptVersion = '1.0.1'
+$ScriptVersion = '1.0.2'
 
 # --- Syncro Script Variables (see .NOTES above) ---
 #
@@ -609,8 +609,17 @@ if ($lastHash -and ($currentHash -eq $lastHash) -and $installState.Installed) {
     # working again on the next run if the server has resumed sending one.
     if ($currentEtag -and ($currentEtag -ne $lastEtag)) {
         try {
-            @{ Etag = $currentEtag; Sha256 = $currentHash; InstalledAt = (Get-Date -Format 'o') } |
-                ConvertTo-Json | Set-Content -LiteralPath $StateFile
+            # Preserve the rest of the saved state (ProductCode/Version/
+            # ScriptVersion/InstalledAt) — this is a no-op run, not an
+            # install, so only the ETag actually needs refreshing.
+            [ordered]@{
+                Etag          = $currentEtag
+                Sha256        = $state.Sha256
+                ProductCode   = $state.ProductCode
+                Version       = $state.Version
+                ScriptVersion = $state.ScriptVersion
+                InstalledAt   = $state.InstalledAt
+            } | ConvertTo-Json | Set-Content -LiteralPath $StateFile
             Write-Log "Refreshed stored ETag for the next run's pre-download check."
         } catch {
             Write-Log "Could not refresh state file - $($_.Exception.Message)" 'WARN'
@@ -756,17 +765,22 @@ try {
 # the publisher signature is cheap defence in depth against a compromised
 # or misconfigured bucket.
 try {
-    $signature = Get-AuthenticodeSignature -LiteralPath $msiFile.FullName
-    $signerCN  = if ($signature.SignerCertificate) { $signature.SignerCertificate.Subject } else { '(none)' }
-    Write-Log "MSI signature status: $($signature.Status). Signer: $signerCN"
+    $signature     = Get-AuthenticodeSignature -LiteralPath $msiFile.FullName
+    $signerSubject = if ($signature.SignerCertificate) { $signature.SignerCertificate.Subject } else { '(none)' }
+    # Extract just the CN (simple name) rather than matching against the raw
+    # Subject string — a substring/wildcard match against the full Subject
+    # would let a different, unrelated certificate whose Subject merely
+    # contains the expected text (or wildcard characters) pass.
+    $signerCN      = if ($signature.SignerCertificate) { $signature.SignerCertificate.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false) } else { '(none)' }
+    Write-Log "MSI signature status: $($signature.Status). Signer: $signerSubject"
 
     if ($ExpectedPublisherCN) {
         if ($signature.Status -ne 'Valid') {
             Write-Log "ERROR: MSI signature is '$($signature.Status)', not 'Valid', and `$ExpectedPublisherCN is set. Refusing to install." 'ERROR'
             exit 6
         }
-        if ($signerCN -notlike "*$ExpectedPublisherCN*") {
-            Write-Log "ERROR: MSI is signed by '$signerCN', which does not match the expected publisher '$ExpectedPublisherCN'. Refusing to install." 'ERROR'
+        if ($signerCN -ne $ExpectedPublisherCN) {
+            Write-Log "ERROR: MSI is signed by '$signerSubject' (CN '$signerCN'), which does not match the expected publisher '$ExpectedPublisherCN'. Refusing to install." 'ERROR'
             exit 6
         }
         Write-Log "MSI signature verified against expected publisher."

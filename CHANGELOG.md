@@ -4,6 +4,12 @@ All notable changes to the scripts in this repo are documented here, grouped by 
 
 ## ninjaone/
 
+### 1.0.2 — 2026-09-17
+
+**Security fix:** the Authenticode publisher check compared the expected CN against the MSI signer's full X.509 Subject using `-notlike "*$ExpectedPublisherCN*"` — a wildcard substring match, not an exact CN comparison. With enforcement enabled, a different, unrelated valid certificate whose Subject merely contained the configured text (or wildcard characters) could pass. The script now extracts the actual CN via `GetNameInfo(SimpleName)` and compares it exactly against `$ExpectedPublisherCN`.
+
+**Bugfix:** the no-op path that refreshes the stored ETag (when the package hash is unchanged but the server's ETag has) was overwriting `last-installed.json` with only `Etag`/`Sha256`/`InstalledAt`, silently dropping `ProductCode`/`Version`/`ScriptVersion` and bumping `InstalledAt` even though no install occurred. It now preserves the rest of the saved state and only refreshes the ETag. Both issues flagged by automated PR review comments (GitHub Copilot / CodeRabbit) on `Acium-Inc/rmm-scripts` PR #1.
+
 ### 1.0.1 — 2026-09-16
 
 **Security fix:** if hardening the ACL on `$LogDir`/`$WorkDir` (SECTION 2) failed, the script previously logged a warning and continued anyway — proceeding to stage and execute a privileged MSI, and recursively delete, inside a directory that may still have been writable by non-admins (the ProgramData-inherited-DACL/junction attack the hardening step exists to close off). It now fails closed: an ACL-hardening failure logs an error and exits with a new code `2` instead of proceeding. Flagged by a GitHub Copilot PR review comment; see `CLAUDE.md`'s exit-code table and this folder's readme for the new code.
@@ -13,6 +19,10 @@ All notable changes to the scripts in this repo are documented here, grouped by 
 Initial version of `ninjaone-acium.ps1`, adapted from `generic-acium.ps1`/`dattormm-acium.ps1` (both at 1.1.0) for NinjaOne. Reads its configuration (`AgentDownloadUrl`, `AgentOrganization`, `ExpectedPublisherCN`) from NinjaOne Automation Script Variables, injected into the script's environment for the run — the same shape as Datto RMM's Component Variables. Install/change-check/prerequisite/logging logic is otherwise identical to the other platform scripts.
 
 ## connectwise-rmm/
+
+### 1.0.2 — 2026-09-17
+
+**Security fix + bugfix:** same two fixes as `ninjaone/` 1.0.2 above — the Authenticode CN check now does an exact comparison against the certificate's extracted CN instead of a wildcard substring match against the full Subject, and the no-op ETag-refresh path now preserves the rest of the saved state instead of dropping `ProductCode`/`Version`/`ScriptVersion` and touching `InstalledAt`. Both flagged by automated PR review comments on `Acium-Inc/rmm-scripts` PR #1.
 
 ### 1.0.1 — 2026-09-16
 
@@ -24,6 +34,10 @@ Initial version of `connectwise-rmm-acium.ps1`, adapted from `generic-acium.ps1`
 
 ## syncro/
 
+### 1.0.2 — 2026-09-17
+
+**Security fix + bugfix:** same two fixes as `ninjaone/` 1.0.2 above — the Authenticode CN check now does an exact comparison against the certificate's extracted CN instead of a wildcard substring match against the full Subject, and the no-op ETag-refresh path now preserves the rest of the saved state instead of dropping `ProductCode`/`Version`/`ScriptVersion` and touching `InstalledAt`. Both flagged by automated PR review comments on `Acium-Inc/rmm-scripts` PR #1.
+
 ### 1.0.1 — 2026-09-16
 
 **Security fix:** same ACL-hardening fail-closed fix as `ninjaone/` 1.0.1 above — if `Protect-Directory` (SECTION 2) failed on `$LogDir`/`$WorkDir`, the script now exits `2` instead of warning and continuing with a privileged install against a directory that may still be writable by non-admins.
@@ -33,6 +47,10 @@ Initial version of `connectwise-rmm-acium.ps1`, adapted from `generic-acium.ps1`
 Initial version of `syncro-acium.ps1`, adapted from `generic-acium.ps1`/`dattormm-acium.ps1` (both at 1.1.0) for Syncro. Reads its configuration (`AgentDownloadUrl`, `AgentOrganization`, `ExpectedPublisherCN`) from Syncro Script Variables — confirmed via Syncro's own documentation to be injected as bare top-level PowerShell variables (e.g. `$AgentDownloadUrl`), not `$env:`-prefixed environment variables like Datto RMM/NinjaOne use; `Agent`-prefixed variable names avoid colliding with this script's own internal `$DownloadUrl`/`$Organization` variables. Install/change-check/prerequisite/logging logic is otherwise identical to the other platform scripts.
 
 ## n-able/
+
+### 1.0.2 — 2026-09-17
+
+**Security fix + bugfix:** same two fixes as `ninjaone/` 1.0.2 above — the Authenticode CN check now does an exact comparison against the certificate's extracted CN instead of a wildcard substring match against the full Subject, and the no-op ETag-refresh path now preserves the rest of the saved state instead of dropping `ProductCode`/`Version`/`ScriptVersion` and touching `InstalledAt`. Both flagged by automated PR review comments on `Acium-Inc/rmm-scripts` PR #1.
 
 ### 1.0.1 — 2026-09-16
 
@@ -44,6 +62,10 @@ Initial version of `n-able-acium.ps1`, adapted from `generic-acium.ps1`/`dattorm
 
 ## intune/
 
+### 1.0.2 — 2026-09-17 (intune-acium-remediation.ps1 only)
+
+**Security fix + bugfix:** same two fixes as `ninjaone/` 1.0.2 above — the Authenticode CN check now does an exact comparison against the certificate's extracted CN instead of a wildcard substring match against the full Subject, and the no-op ETag-refresh path now preserves the rest of the saved state instead of dropping `ProductCode`/`Version`/`ScriptVersion` and touching `InstalledAt`. Both flagged by automated PR review comments on `Acium-Inc/rmm-scripts` PR #1. `intune-acium-detection.ps1` is unaffected — it never performs the signature check or writes `last-installed.json`.
+
 ### 1.0.1 — 2026-09-16 (intune-acium-remediation.ps1 only)
 
 **Security fix:** same ACL-hardening fail-closed fix as `ninjaone/` 1.0.1 above — if `Protect-Directory` (SECTION 2) failed on `$LogDir`/`$WorkDir`, `intune-acium-remediation.ps1` now exits `2` instead of warning and continuing with a privileged install against a directory that may still be writable by non-admins. `intune-acium-detection.ps1` is unaffected — it never calls `Protect-Directory`.
@@ -53,6 +75,10 @@ Initial version of `n-able-acium.ps1`, adapted from `generic-acium.ps1`/`dattorm
 Initial version, split into `intune-acium-detection.ps1` (read-only) and `intune-acium-remediation.ps1` (does the install), deployed as an Intune Remediation rather than a single script — Intune's plain "platform script" mechanism runs once per device and never recurs, which doesn't fit this repo's recurring/idempotent design, and Remediations have no per-deployment variable system, so configuration is hardcoded in both scripts (same pattern as `generic-acium.ps1`) between `EDIT THESE VALUES` markers. `$DownloadUrl` must be kept identical across both files — see the `.NOTES` in `intune-acium-remediation.ps1`. `intune-acium-remediation.ps1`'s install logic is otherwise adapted directly from `generic-acium.ps1` 1.1.0.
 
 ## generic/
+
+### 1.2.1 — 2026-09-17
+
+**Security fix + bugfix:** same two fixes as `ninjaone/` 1.0.2 above — the Authenticode CN check now does an exact comparison against the certificate's extracted CN instead of a wildcard substring match against the full Subject, and the no-op ETag-refresh path now preserves the rest of the saved state instead of dropping `ProductCode`/`Version`/`ScriptVersion` and touching `InstalledAt`. Both flagged by automated PR review comments on `Acium-Inc/rmm-scripts` PR #1 (on the new platform scripts, which shared this same logic — applied here since `generic-acium.ps1` had the identical bugs).
 
 ### 1.2.0 — 2026-09-16
 
@@ -76,6 +102,10 @@ Promoted from `generic-acium-beta.ps1` to production as `generic-acium.ps1` afte
 - **Added `$ScriptVersion`** tracking (this changelog).
 
 ## dattormm/
+
+### 1.2.1 — 2026-09-17
+
+**Security fix + bugfix:** same two fixes as `ninjaone/` 1.0.2 above — the Authenticode CN check now does an exact comparison against the certificate's extracted CN instead of a wildcard substring match against the full Subject, and the no-op ETag-refresh path now preserves the rest of the saved state instead of dropping `ProductCode`/`Version`/`ScriptVersion` and touching `InstalledAt`. Both flagged by automated PR review comments on `Acium-Inc/rmm-scripts` PR #1 (on the new platform scripts, which shared this same logic — applied here since `dattormm-acium.ps1` had the identical bugs).
 
 ### 1.2.0 — 2026-09-16
 
