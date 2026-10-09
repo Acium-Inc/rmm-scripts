@@ -123,7 +123,7 @@ $Organization = ''
 # an MSI that isn't validly signed by it, and exits 6. Leave blank to run
 # unsigned/unverified packages but log what the signature actually says -
 # fill this in once you've confirmed the real publisher name from the log.
-$ExpectedPublisherCN = 'Acium Inc'
+$ExpectedPublisherCN = ''
 
 # --- END CONFIGURABLE VALUES ---
 
