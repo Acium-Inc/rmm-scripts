@@ -68,7 +68,7 @@
 
         AgentDownloadUrl    - REQUIRED. Text parameter. Direct URL to the
                               pinned agent zip, e.g.
-                              https://storage.googleapis.com/ebm-sensors-prod/win/acium-sensor-setup.zip
+                              https://storage.googleapis.com/ebm-sensors-prod/win/acium-sensor-setup-latest.zip
 
         AgentOrganization   - OPTIONAL. Text parameter. The organization/
                               tenant ID these endpoints report under,

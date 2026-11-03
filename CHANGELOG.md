@@ -24,6 +24,10 @@ Initial version of `ninjaone-acium.ps1`, adapted from `generic-acium.ps1`/`datto
 
 ## connectwise-rmm/
 
+### 1.0.4 — 2026-11-03
+
+**URL update:** switched `$DownloadUrl` from the pinned `acium-sensor-setup-0.17.9.zip` URL to the new permanent `acium-sensor-setup-latest.zip` URL. The server now serves the latest sensor version at a stable URL rather than requiring a script edit for each agent release.
+
 ### 1.0.3 — 2026-09-18
 
 **Critical bugfix:** same em-dash/no-BOM parsing bug as `intune/` 1.0.3 below and `ninjaone/` 1.0.3 above — this file had no BOM and em dashes in live `Write-Log` strings, which Windows PowerShell 5.1 can misdecode (absent a BOM) into a curly quote character that breaks string/brace parsing before the script runs at all. Fixed by replacing every em dash with an ASCII hyphen.
@@ -78,6 +82,10 @@ Initial version of `n-able-acium.ps1`, adapted from `generic-acium.ps1`/`dattorm
 
 ## intune/
 
+### 1.0.4 — 2026-11-03
+
+**URL update (both files):** switched `$DownloadUrl` in both `intune-acium-detection.ps1` and `intune-acium-remediation.ps1` from the pinned `acium-sensor-setup-0.17.9.zip` URL to the new permanent `acium-sensor-setup-latest.zip` URL. The two files must always carry the same `$DownloadUrl` — if they disagree, detection can report "compliant" for a version the remediation script would actually reinstall.
+
 ### 1.0.3 — 2026-09-18
 
 **Critical bugfix:** both scripts were saved as UTF-8 without a BOM and contained em dashes (`—`) in comments and in one `Write-Host` string (`intune-acium-detection.ps1`'s "no prior install state is recorded" message). Windows PowerShell 5.1 only reads a `.ps1` file as UTF-8 when it has a BOM; without one it falls back to the system ANSI code page, which misdecodes the em dash's UTF-8 bytes into a curly right double-quote (U+201D) — a character PowerShell's parser accepts as an alternate string delimiter. That corrupted string/brace parsing well before the script did anything, so it failed at the PowerShell parse stage with "string is missing the terminator" / "missing closing '}'" errors (exit code 1, from `AgentExecutor.log`) before creating `C:\ProgramData\AciumSensor` or writing anything to `deploy.log` — both `intune-acium-detection.ps1` and `intune-acium-remediation.ps1` were completely non-functional on any endpoint without a matching code page. Fixed by replacing all em dashes with ASCII hyphens in both files, removing the encoding dependency entirely. Found via a real device reporting "Detection status - with issues" / "Remediation status: failed" with no `AciumSensor` folder on disk, diagnosed from `AgentExecutor.log`.
@@ -95,6 +103,10 @@ Initial version of `n-able-acium.ps1`, adapted from `generic-acium.ps1`/`dattorm
 Initial version, split into `intune-acium-detection.ps1` (read-only) and `intune-acium-remediation.ps1` (does the install), deployed as an Intune Remediation rather than a single script — Intune's plain "platform script" mechanism runs once per device and never recurs, which doesn't fit this repo's recurring/idempotent design, and Remediations have no per-deployment variable system, so configuration is hardcoded in both scripts (same pattern as `generic-acium.ps1`) between `EDIT THESE VALUES` markers. `$DownloadUrl` must be kept identical across both files — see the `.NOTES` in `intune-acium-remediation.ps1`. `intune-acium-remediation.ps1`'s install logic is otherwise adapted directly from `generic-acium.ps1` 1.1.0.
 
 ## generic/
+
+### 1.2.3 — 2026-11-03
+
+**URL update:** switched `$DownloadUrl` from the pinned `acium-sensor-setup-0.17.9.zip` URL to the new permanent `acium-sensor-setup-latest.zip` URL. The server now serves the latest sensor version at a stable URL rather than requiring a script edit for each agent release.
 
 ### 1.2.2 — 2026-09-18
 
