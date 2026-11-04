@@ -89,7 +89,11 @@ n-able-acium.ps1 -AgentDownloadUrl "https://storage.googleapis.com/ebm-sensors-p
 
 > **Multiple customers** with different org IDs: create a separate Scheduled Task per customer, each pointing at the same repository script with that customer's `-AgentOrganization` value.
 
-#### Targets tab
+| Input Parameter name | Type | Required | Example value |
+|---|---|---|---|
+| `AgentDownloadUrl` | Text | Yes | `https://storage.googleapis.com/ebm-sensors-prod/win/acium-sensor-setup-0.17.9.zip` |
+| `AgentOrganization` | Text | No | Your org/tenant ID, passed to the MSI as the `ORGANIZATION` property |
+| `ExpectedPublisherCN` | Text | No | Expected Authenticode signer subject CN, e.g. `Acium, Inc.` — when set, an MSI not validly signed by it is refused |
 
 Select the devices or filters to target. For a customer-wide deployment, use a device filter that matches all Windows endpoints for that customer. For a first test, target a single specific device.
 
