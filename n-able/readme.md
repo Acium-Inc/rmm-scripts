@@ -68,6 +68,12 @@ Go to **Configuration > Scheduled Tasks > Add/Delete** and click **Add > Scripti
 After selecting the repository item, the Description and File Name fields fill in automatically. Enter your parameters in **Command Line Parameters**:
 
 ```
+n-able-acium.ps1 -AgentDownloadUrl "https://storage.googleapis.com/ebm-sensors-prod/win/acium-sensor-setup-latest.zip"
+```
+
+If you need to pass an org/tenant ID to the sensor, add `-AgentOrganization` after the URL:
+
+```
 n-able-acium.ps1 -AgentDownloadUrl "https://storage.googleapis.com/ebm-sensors-prod/win/acium-sensor-setup-latest.zip" -AgentOrganization "your-org-id"
 ```
 
