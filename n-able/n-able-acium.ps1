@@ -3,9 +3,9 @@
 <#
 .SYNOPSIS
     Downloads and installs the Acium Sensor agent from a pinned URL.
-    Designed to run as a PowerShell script Object inside an N-able
-    N-central Automation Manager Policy (executed as SYSTEM on the target
-    device), scheduled recurring against a device group.
+    Designed to run as a Scripting Scheduled Task inside N-able N-central
+    (executed as NT AUTHORITY\SYSTEM via LocalSystem credentials), scheduled
+    recurring against a device group or filter.
 
 .DESCRIPTION
     On each run, in order:
@@ -25,62 +25,45 @@
 
 .NOTES
     PLATFORM CHOICE: N-able sells two RMM products under one brand -
-    N-central (on-prem/hosted, built around Automation Manager Policies)
-    and N-sight RMM (cloud, built around Script Checks / Automated Tasks).
-    This script targets N-CENTRAL's Automation Manager, because it has a
-    dedicated "Run PowerShell Script" Object with documented Input/Output
-    Parameters built specifically for PowerShell - see
-    https://documentation.n-able.com/remote-management/userguide/Content/auto_mananger/objects/extensions/runscript.htm
-    and
-    https://documentation.n-able.com/N-central/userguide/Content/Automation/AutoMgr_InputParameters.htm
-    N-sight RMM's custom-script docs describe passing arguments via a
-    "Command Line" field but don't document PowerShell-specific argument
-    parsing (their examples are batch/bash/VBScript), so if you're actually
-    on N-sight RMM rather than N-central, confirm the parameter mechanism
-    below still applies before deploying - see the UNVERIFIED note.
+    N-central (on-prem/hosted) and N-sight RMM (cloud). This script
+    targets N-CENTRAL's Scheduled Tasks feature (Configuration >
+    Scheduled Tasks). Automation Manager also appears in N-central's UI
+    but is a separate mechanism not used here.
 
-    PARAMETER MECHANISM - UNVERIFIED, CONFIRM BEFORE DEPLOYING: N-able's
-    docs confirm that the Run PowerShell Script Object's Input Parameters
-    must be "preceded by $" for the script engine to recognize them, but do
-    NOT show a concrete example of how the value actually reaches the
-    script (environment variable vs. the object binding to a same-named
-    PowerShell parameter vs. literal argument injection). This script uses
-    a standard PowerShell `param()` block - the safest, most portable
-    mechanism for a script that receives values "as if entered directly on
-    the device" - and expects Input Parameters named to match. TEST THIS
-    against your own N-central instance: run the Object once with each
-    Input Parameter set to an obviously-distinct value and confirm
-    `deploy.log`'s "Download URL:" / "Organization:" lines show what you
-    expect before relying on this in production. If your instance instead
-    injects values as environment variables (as Datto RMM and NinjaOne do
-    - see dattormm/ and ninjaone/ in this repo), change SECTION 1 below to
-    read $env:AgentDownloadUrl etc. instead of the param() block.
+    PARAMETER MECHANISM - CONFIRMED: N-central Scheduled Tasks pass the
+    "Command Line Parameters" field to PowerShell as command-line arguments.
+    The param() block at the top of this script correctly receives them.
+    When creating a Scheduled Task, the Command Line Parameters field
+    auto-populates with the script filename - append named parameters after
+    it, e.g.:
+        n-able-acium.ps1 -AgentDownloadUrl "https://..." -AgentOrganization "myorg"
+    For multiple customers with different org IDs, create a separate
+    Scheduled Task per customer pointing at the same repository script.
 
     VERSION: $ScriptVersion in SECTION 1 below tracks this script's own
     revision, separate from the agent version in $AgentDownloadUrl. Bump it
     whenever this script's logic changes, and add an entry to
     CHANGELOG.md at the repo root describing what changed and why.
 
-    Input Parameters expected on the Automation Manager "Run PowerShell
-    Script" Object (configure these as Input Parameters on the Object,
-    NOT hardcoded in this script - that way, pointing to a new agent
-    version later is just editing a parameter default, not editing code):
+    Parameters passed via N-central's Command Line Parameters field (append
+    these after the script filename in the Scheduled Task's Command Line
+    Parameters field, NOT hardcoded in this script - that way, pointing to
+    a new agent version or a different customer is a task edit, not a code
+    change):
 
-        AgentDownloadUrl    - REQUIRED. Text parameter. Direct URL to the
-                              pinned agent zip, e.g.
-                              https://storage.googleapis.com/ebm-sensors-prod/win/acium-sensor-setup-latest.zip
+        -AgentDownloadUrl    REQUIRED. Direct URL to the pinned agent zip,
+                             e.g. https://storage.googleapis.com/ebm-sensors-prod/win/acium-sensor-setup-latest.zip
 
-        AgentOrganization   - OPTIONAL. Text parameter. The organization/
-                              tenant ID these endpoints report under,
-                              passed to the MSI as the ORGANIZATION
-                              property. Set this per policy/customer.
-                              Leave blank to install without it.
+        -AgentOrganization   OPTIONAL. The organization/tenant ID these
+                             endpoints report under, passed to the MSI as
+                             the ORGANIZATION property. Set per task/
+                             customer. Leave blank to install without it.
 
-        ExpectedPublisherCN - OPTIONAL. Text parameter. Expected
-                              Authenticode signing certificate subject CN.
-                              When set, an MSI that isn't validly signed by
-                              it is refused (exit 6). Leave blank to log
-                              the signature status without enforcing it.
+        -ExpectedPublisherCN OPTIONAL. Expected Authenticode signing
+                             certificate subject CN. When set, an MSI that
+                             isn't validly signed by it is refused (exit 6).
+                             Leave blank to log the signature status without
+                             enforcing it.
 
     VERIFY THE PRODUCTCODE: $ProductCode below has not been confirmed
     against a real Acium Sensor MSI. To get the true value, run this on one
@@ -102,13 +85,10 @@
     server does or doesn't send. Either one matching, combined with the
     sensor actually being installed, is enough to skip.
 
-    SYSTEM CONTEXT - UNVERIFIED, CONFIRM BEFORE DEPLOYING: N-able's docs
-    for this Object mention a "Run as Current Logged on User" option,
-    implying the default (unchecked) runs under the N-central agent's own
-    service account rather than the interactively logged-on user, but do
-    NOT explicitly confirm that account is NT AUTHORITY\SYSTEM on every
-    N-central probe/agent configuration. Check `deploy.log`'s "Running as:"
-    line after your first test run to confirm.
+    SYSTEM CONTEXT - CONFIRMED: N-central Scheduled Tasks run as
+    NT AUTHORITY\SYSTEM when "Use LocalSystem credentials" is selected on
+    the Task Handler tab (the default). Confirmed via deploy.log's
+    "Running as:" line on a live tenant.
 
     Exit codes (Automation Manager reads any non-zero exit as Object/Policy
     failure - it does not distinguish between these specific codes in its
@@ -150,7 +130,7 @@ $ErrorActionPreference = 'Stop'
 # This script's own revision (not the agent's - see $AgentDownloadUrl above
 # for that). Bump this whenever the script's logic changes, and record the
 # change in CHANGELOG.md at the repo root.
-$ScriptVersion = '1.0.3'
+$ScriptVersion = '1.0.4'
 
 # --- N-central Automation Manager Input Parameters (see .NOTES above) ---
 #

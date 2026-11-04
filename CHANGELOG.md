@@ -64,6 +64,10 @@ Initial version of `syncro-acium.ps1`, adapted from `generic-acium.ps1`/`dattorm
 
 ## n-able/
 
+### 1.0.4 — 2026-11-04
+
+**Docs update (script + readme):** confirmed N-central's parameter and execution-context behavior against a live tenant and removed all "UNVERIFIED" language. N-central Scheduled Tasks pass the "Command Line Parameters" field as command-line arguments directly to PowerShell — the existing `param()` block correctly receives them (confirmed: `-AgentDownloadUrl "url"` appended after the script filename in the Command Line Parameters field reaches `$AgentDownloadUrl` in the script). Execution context confirmed as `NT AUTHORITY\SYSTEM` via "Use LocalSystem credentials" on the Task Handler tab. Also corrected the script's platform description: the right deployment path is **Configuration > Scheduled Tasks** (not Automation Manager, which exists in the N-central UI but is a separate mechanism). Rewrote `readme.md` with the actual two-step setup flow (Script/Software Repository upload, then Scheduled Task creation), confirmed parameter format, per-customer task pattern, schedule/timeout notes, and updated troubleshooting.
+
 ### 1.0.3 — 2026-09-18
 
 **Critical bugfix:** same em-dash/no-BOM parsing bug as `intune/` 1.0.3 below and `ninjaone/` 1.0.3 above — this file had no BOM and em dashes in live `Write-Log` strings, which Windows PowerShell 5.1 can misdecode (absent a BOM) into a curly quote character that breaks string/brace parsing before the script runs at all. Fixed by replacing every em dash with an ASCII hyphen.
