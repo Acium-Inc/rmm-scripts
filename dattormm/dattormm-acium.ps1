@@ -35,7 +35,7 @@
     variables at runtime.
 
         AgentDownloadUrl    - REQUIRED. Direct URL to the pinned agent zip,
-                              e.g. https://storage.googleapis.com/ebm-sensors-prod/win/acium-sensor-setup.zip
+                              e.g. https://storage.googleapis.com/ebm-sensors-prod/win/acium-sensor-setup-latest.zip
 
         AgentOrganization   - OPTIONAL. The organization/tenant ID these
                               endpoints report under, passed to the MSI as

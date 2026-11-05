@@ -1,20 +1,10 @@
-# Acium Sensor — N-able Deployment Script
+# Acium Sensor — N-able N-central Deployment Script
 
-> **Status: Untested.** This script has not yet been run against a live N-able deployment. Validate it end-to-end in a lab/pilot environment before rolling it out to production endpoints.
+> **Product targeted: N-able N-CENTRAL** (Scheduled Tasks), not N-sight RMM. N-able sells two separate RMM products under one brand. This script targets N-central's **Scheduled Tasks** feature. Automation Manager also appears in N-central's UI but is a separate mechanism not used here.
 
-> **Product targeted: N-able N-CENTRAL** (Automation Manager), not N-sight RMM. N-able sells two separate RMM products under one brand. This script targets N-central because its Automation Manager has a dedicated "Run PowerShell Script" Object with documented Input/Output Parameters built specifically for PowerShell. N-sight RMM's custom-script docs describe passing arguments via a "Command Line" field, with examples only in batch/bash/VBScript — if you're actually on N-sight RMM, read the **Parameter mechanism** warning below carefully before deploying.
+This folder contains `n-able-acium.ps1`, a PowerShell script that installs and keeps the Acium Sensor up to date across a fleet of Windows endpoints via an N-central Scripting Scheduled Task.
 
-This folder contains `n-able-acium.ps1`, a PowerShell script that installs and keeps the Acium Sensor up to date across a fleet of Windows endpoints via an N-central Automation Manager Policy.
-
-It's designed to run as a **recurring Automation Manager Policy**, safely skipping machines that are already up to date and only reinstalling when something's actually changed.
-
-## ⚠️ Parameter mechanism — unverified, test before relying on it
-
-N-able's documentation confirms that Automation Manager's "Run PowerShell Script" Object requires Input Parameters to be "preceded by `$`" for the script engine to recognize them, but does **not** show a concrete example of the underlying mechanism (environment variable vs. the Object binding directly to a same-named PowerShell parameter vs. literal text substitution). This script uses a standard PowerShell `param()` block at the top of the file — the safest, most portable option for a script that receives values "as if entered directly on the device" — and expects Input Parameters named to match it.
-
-**Before deploying this to more than a single test device:** run the Object once against a test machine with each Input Parameter set to an obviously-distinct value, then check `deploy.log`'s `Download URL:` / `Organization:` lines to confirm the values actually arrived. If your N-central instance instead injects values as environment variables (the way Datto RMM and NinjaOne do — see [`dattormm/`](../dattormm/) and [`ninjaone/`](../ninjaone/) in this repo), change the top of `n-able-acium.ps1` to read `$env:AgentDownloadUrl` etc. instead of the `param()` block.
-
-Similarly, **SYSTEM execution context is unverified**: the docs mention a "Run as Current Logged on User" option on the Object, implying unchecked runs under the N-central agent's own service account, but don't explicitly confirm that account is `NT AUTHORITY\SYSTEM` on every N-central configuration. Confirm via `deploy.log`'s `Running as:` line after your first test run.
+It's designed to run as a **recurring Scheduled Task**, safely skipping machines that are already up to date and only reinstalling when something's actually changed.
 
 ## What the script does
 
@@ -35,21 +25,69 @@ The script is idempotent and safe to run on a schedule — a machine that's alre
 - N-central probe/agent installed and checking in on target endpoints.
 - Endpoints running Windows with PowerShell 5.1 (Windows PowerShell) or later.
 - Outbound HTTPS access from endpoints to your sensor package's download URL and to `aka.ms` (for the ASP.NET Core Runtime installer, only needed on machines that don't already have it).
-- An N-central license/edition that includes Automation Manager.
 
 ## Setup in N-central
 
-### 1. Create (or open) an Automation Manager Policy
+### Step 1 — Upload the script to the Script/Software Repository
 
-In N-central, go to **Configuration > Automation Manager** and create a new Policy (or edit an existing one) targeting your device group/filter.
+Go to **Configuration > Scheduled Tasks > Script/Software Repository** and click **Add > Scripting**.
 
-### 2. Add a "Run PowerShell Script" Object
+![Configuration > Scheduled Tasks > Script/Software Repository — click Add, then Scripting](screenshots/n1.png)
 
-Add the **Run PowerShell Script** Object to the Policy, and paste the contents of `n-able-acium.ps1` into it.
+Fill in:
 
-### 3. Add the Input Parameters
+| Field | Value |
+|---|---|
+| **Name** | `Acium Sensor` (or any name you'll recognize) |
+| **Description** | e.g. `Deployment of the Acium Sensor` |
+| **File Name** | Upload `n-able-acium.ps1` |
+| **Command Line Parameters** | Leave blank here — set per-task in Step 2 |
 
-Define these as **Input Parameters** on the Object (Input Parameter names must be alphabetic only — no numbers, spaces, or symbols):
+![Fill in the Name, Description, and browse to select n-able-acium.ps1](screenshots/n2.png)
+
+Click **Save**. The script now lives in the repository and can be used by multiple Scheduled Tasks (one per customer).
+
+### Step 2 — Create a Scheduled Task
+
+Go to **Configuration > Scheduled Tasks > Add/Delete** and click **Add > Scripting**.
+
+![Configuration > Scheduled Tasks > Add/Delete — click Add, then Scripting](screenshots/n3.png)
+
+#### Details tab
+
+- **Task Name**: something descriptive, e.g. `Acium Sensor`
+
+#### Task Handler tab
+
+- **Credentials**: select **Use LocalSystem credentials** — the script runs as `NT AUTHORITY\SYSTEM`
+- **Repository Item**: select the `Acium Sensor` entry uploaded in Step 1
+- **Command Line Parameters**: the field auto-populates with the script filename — append your parameters after it
+
+![Task Handler tab — select Use LocalSystem credentials, then choose the Acium Sensor repository item](screenshots/n4.png)
+
+After selecting the repository item, the Description and File Name fields fill in automatically. Enter your parameters in **Command Line Parameters**:
+
+```
+n-able-acium.ps1 -AgentDownloadUrl "https://storage.googleapis.com/ebm-sensors-prod/win/acium-sensor-setup-latest.zip"
+```
+
+If you need to pass an org/tenant ID to the sensor, add `-AgentOrganization` after the URL:
+
+```
+n-able-acium.ps1 -AgentDownloadUrl "https://storage.googleapis.com/ebm-sensors-prod/win/acium-sensor-setup-latest.zip" -AgentOrganization "your-org-id"
+```
+
+![Command Line Parameters filled in with the script filename and -AgentDownloadUrl argument](screenshots/n4b.png)
+
+| Parameter | Required | Description |
+|---|---|---|
+| `-AgentDownloadUrl` | Yes | Direct URL to the sensor zip |
+| `-AgentOrganization` | No | Org/tenant ID passed to the MSI as `ORGANIZATION`. Leave blank to install without it. |
+| `-ExpectedPublisherCN` | No | Authenticode signer CN to enforce. Leave blank until you've confirmed the actual signer CN from `deploy.log`, then set it to lock down what's accepted. |
+
+> **Bumping to a new sensor version** is just updating `-AgentDownloadUrl` in the task's Command Line Parameters — no script edit needed.
+
+> **Multiple customers** with different org IDs: create a separate Scheduled Task per customer, each pointing at the same repository script with that customer's `-AgentOrganization` value.
 
 | Input Parameter name | Type | Required | Example value |
 |---|---|---|---|
@@ -57,21 +95,23 @@ Define these as **Input Parameters** on the Object (Input Parameter names must b
 | `AgentOrganization` | Text | No | Your org/tenant ID, passed to the MSI as the `ORGANIZATION` property |
 | `ExpectedPublisherCN` | Text | No | Expected Authenticode signer subject CN, e.g. `Acium, Inc.` — when set, an MSI not validly signed by it is refused |
 
-See the **Parameter mechanism** warning above — verify these values actually reach the script before trusting this in production.
+Select the devices or filters to target. For a customer-wide deployment, use a device filter that matches all Windows endpoints for that customer. For a first test, target a single specific device.
 
-> Bumping to a new sensor version later is just updating the `AgentDownloadUrl` Input Parameter's value — you don't need to edit the script itself.
+![Targets tab — select individual devices or use a device filter](screenshots/n5.png)
 
-### 4. Set execution context
+#### Schedule tab
 
-Confirm the Object is **not** set to "Run as Current Logged on User" — leave that option off so it runs under the N-central agent's own service account. Verify this actually resolves to SYSTEM via `deploy.log`'s `Running as:` line (see the warning above).
+- **Type**: set to a recurring schedule (e.g. Daily) for ongoing deployments. The script's built-in change check means most runs are a quick no-op — only machines with a changed package or missing sensor do any real work.
+- **Missed Executions**: select **As soon as possible, if the machine is offline at the scheduled time** so endpoints that were offline still receive the update when they come back online.
+- **Execution Timeout**: the default of 1 hour is usually sufficient. On slow connections where both the ASP.NET Core Hosting Bundle and the sensor zip need to download for the first time, consider increasing it.
 
-### 5. Schedule the Policy
+![Schedule tab — set Type, Execution Timeout, and Missed Executions policy](screenshots/n6.png)
 
-Assign the Policy to run on a recurring schedule (e.g. daily) against your target device group. Because the script checks for changes before doing any real work, recurring execution is cheap — most runs will be a quick no-op.
+Click **Save**.
 
 ## Logs
 
-The script writes its own logs to the endpoint, independent of what N-central captures from the Object's own output:
+The script writes its own logs to the endpoint, independent of what N-central captures from the task's own output:
 
 | File | What's in it |
 |---|---|
@@ -89,11 +129,11 @@ If a deployment isn't behaving as expected, `deploy.log` is the first place to l
 | `1` | Download failed (sensor package or ASP.NET Core Runtime installer) |
 | `2` | Could not secure the working/log directory (ACL hardening failed) — refused to proceed with a privileged install |
 | `3` | Install failed (sensor MSI or ASP.NET Core Runtime installer) |
-| `4` | Missing or invalid Input Parameter (`AgentDownloadUrl` empty, or `AgentOrganization` contains a double quote) |
+| `4` | Missing or invalid parameter (`-AgentDownloadUrl` empty, or `-AgentOrganization` contains a double quote) |
 | `5` | Zip extraction failed / `AciumSensorInstall.msi` not found inside the package |
-| `6` | MSI failed Authenticode signature verification against `ExpectedPublisherCN` |
+| `6` | MSI failed Authenticode signature verification against `-ExpectedPublisherCN` |
 
-Automation Manager only distinguishes success (exit `0`) from failure (any non-zero exit) in its own UI — it does not surface which specific code was returned. Read `deploy.log` for that detail.
+N-central's Scheduled Tasks only distinguishes success (exit `0`) from failure (any non-zero exit) in its own UI. Read `deploy.log` for the specific code and cause.
 
 ## Known dependencies
 
@@ -102,10 +142,10 @@ Automation Manager only distinguishes success (exit `0`) from failure (any non-z
 
 ## Troubleshooting
 
-- **Input Parameter values don't seem to reach the script (`deploy.log` shows "Download URL: (blank)" or similar)**: This is the unverified part of the setup — see the warning above. Confirm your N-central version actually binds Input Parameters to same-named PowerShell `param()` variables; if not, switch SECTION 1 to read `$env:AgentDownloadUrl` etc. instead.
+- **Script exits with code 4 and log shows "Missing required parameter (AgentDownloadUrl)"**: The `-AgentDownloadUrl` value didn't reach the script. Check that the Command Line Parameters field on the Task Handler tab starts with the script filename followed by `-AgentDownloadUrl "..."` — the field must include the script filename because N-central auto-populates it and you append parameters after it.
 - **Script exits with code 2**: The script couldn't lock down `$LogDir` or `$WorkDir`'s permissions (`Set-Acl`/`Get-Acl` failed), so it refused to proceed rather than stage/execute a privileged MSI in a directory that might still be writable by non-admins. This should be very rare when running as SYSTEM — check `deploy.log` for the exact directory and investigate why an ACL change failed there (endpoint security software, filesystem issue, or an already-tampered-with directory are the likely causes).
-- **UAC prompt appears on the client**: This shouldn't happen if the Object is genuinely running under the agent's service account — SYSTEM-context execution never triggers UAC. If you see this, first confirm the Object isn't set to "Run as Current Logged on User," then check `deploy.log`'s `Running as:` line to see what account actually ran the script.
-- **Install seems to succeed but the sensor doesn't run**: Check whether the ASP.NET Core 8.0 Runtime installed successfully in `deploy.log`, and confirm via `Get-Service AciumSensor` on the endpoint. If the runtime is present and the service still isn't there, check `msi-install.log` for the `Feature: Main; ... Action:` line — if it says `Action: Null` for every component (instead of `Action: Local`), Windows Installer silently did nothing (see the exit-code-3/1638 entry below for why).
+- **Install seems to succeed but the sensor doesn't run**: Check whether the ASP.NET Core 8.0 Runtime installed successfully in `deploy.log`, and confirm via `Get-Service AciumSensor` on the endpoint. If the runtime is present and the service still isn't there, check `msi-install.log` for the `Feature: Main; ... Action:` line — if it says `Action: Null` for every component (instead of `Action: Local`), Windows Installer silently did nothing (see the 1638 entry below for why).
 - **Script always reinstalls, never skips**: Check that the download URL returns an `ETag` header (most servers, including Google Cloud Storage, do this by default) and that `last-installed.json` is being written and persisted between runs.
-- **Install fails with exit code 3 and `msi-install.log` shows error 1638 ("Another version of this product is already installed")**: The sensor's MSI keeps the same `ProductCode` across versions, so Windows Installer refuses a plain reinstall whenever that `ProductCode` is already registered — most commonly because the sensor was installed manually at some point (outside this Policy), so there's no `last-installed.json` to make the script skip it. The script checks whether the product is already installed via Windows Installer's own `ProductState` API (look for `$isProductInstalled` in SECTION 8) and only adds `REINSTALL=ALL REINSTALLMODE=vomus` in that case — those properties are needed to force a reinstall over an existing registration, but must NOT be passed on a genuine first-time install: doing so makes Windows Installer resolve every component's install action to `Null`, silently installing nothing while still reporting exit code 0.
-- **Script exits 0 but nothing was installed and the log says "deferred"**: The ASP.NET Core Hosting Bundle needed a reboot to finish. This is expected — the script intentionally stops rather than installing the sensor against a runtime that can't start yet. The next scheduled Policy run completes the install once the machine has rebooted.
+- **Install fails with exit code 3 and `msi-install.log` shows error 1638 ("Another version of this product is already installed")**: The sensor's MSI keeps the same `ProductCode` across versions, so Windows Installer refuses a plain reinstall whenever that `ProductCode` is already registered — most commonly because the sensor was installed manually at some point (outside this task), so there's no `last-installed.json` to make the script skip it. The script checks whether the product is already installed via Windows Installer's own `ProductState` API (look for `$isProductInstalled` in SECTION 8) and only adds `REINSTALL=ALL REINSTALLMODE=vomus` in that case — those properties are needed to force a reinstall over an existing registration, but must NOT be passed on a genuine first-time install: doing so makes Windows Installer resolve every component's install action to `Null`, silently installing nothing while still reporting exit code 0.
+- **Script exits 0 but nothing was installed and the log says "deferred"**: The ASP.NET Core Hosting Bundle needed a reboot to finish. This is expected — the script intentionally stops rather than installing the sensor against a runtime that can't start yet. The next scheduled task run completes the install once the machine has rebooted.
+- **Task times out before finishing**: The default Execution Timeout is 1 hour. On a slow connection where both the ASP.NET Core Hosting Bundle and the sensor zip need to download for the first time, this may not be enough. Increase the Execution Timeout on the Schedule tab.

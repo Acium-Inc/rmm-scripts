@@ -101,7 +101,7 @@ $ErrorActionPreference = 'Stop'
 # This script's own revision (not the agent's - see $DownloadUrl below for
 # that). Bump this whenever the script's logic changes, and record the
 # change in CHANGELOG.md at the repo root.
-$ScriptVersion = '1.0.3'
+$ScriptVersion = '1.0.4'
 
 # --- EDIT THESE VALUES TO CONFIGURE A DEPLOYMENT ---
 # Keep $DownloadUrl in sync with the copy in intune-acium-detection.ps1 -
@@ -111,7 +111,7 @@ $ScriptVersion = '1.0.3'
 # Intune Remediations have no equivalent of a Component Variable. Update
 # this and re-save the Remediation (in both this file and the detection
 # script) when a new agent version needs to go out.
-$DownloadUrl = 'https://storage.googleapis.com/ebm-sensors-prod/win/acium-sensor-setup-0.17.9.zip'
+$DownloadUrl = 'https://storage.googleapis.com/ebm-sensors-prod/win/acium-sensor-setup-latest.zip'
 
 # The organization/tenant ID this sensor should report under, passed to the
 # MSI as the ORGANIZATION property. Optional - leave blank to install

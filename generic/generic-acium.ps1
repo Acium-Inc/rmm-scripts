@@ -86,7 +86,7 @@ $ErrorActionPreference = 'Stop'
 # This script's own revision (not the agent's - see $DownloadUrl below for
 # that). Bump this whenever the script's logic changes, and record the
 # change in CHANGELOG.md at the repo root.
-$ScriptVersion = '1.2.2'
+$ScriptVersion = '1.2.3'
 
 # --- EDIT THESE VALUES TO CONFIGURE A DEPLOYMENT ---
 
@@ -94,7 +94,7 @@ $ScriptVersion = '1.2.2'
 # than read from an RMM variable) so it behaves identically no matter what
 # platform runs it. Update this and redeploy when a new agent version needs
 # to go out.
-$DownloadUrl = 'https://storage.googleapis.com/ebm-sensors-prod/win/acium-sensor-setup-0.17.9.zip'
+$DownloadUrl = 'https://storage.googleapis.com/ebm-sensors-prod/win/acium-sensor-setup-latest.zip'
 
 # The organization/tenant ID this sensor should report under, passed to the
 # MSI as the ORGANIZATION property. Optional - leave blank to install
